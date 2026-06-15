@@ -1,0 +1,14 @@
+[Unit]
+Description=Douyin API Server
+After=network.target
+
+[Service]
+Type=simple
+User=mariadelurdesalvesdoprado
+WorkingDirectory=/home/mariadelurdesalvesdoprado/apps/kuma-scrapper/douyin_api
+ExecStart=/home/mariadelurdesalvesdoprado/apps/kuma-scrapper/.venv/bin/python main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
