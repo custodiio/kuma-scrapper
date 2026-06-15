@@ -17,7 +17,7 @@ from telegram.ext import (
 )
 
 from src import database, media_processor, drive_uploader
-from src.config import DOUYIN_API_BASE
+from src.config import DOUYIN_API_BASE, WEB_PANEL_URL
 
 logger = logging.getLogger(__name__)
 
@@ -469,7 +469,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 "🌐 **Painel de Triagem Web**\n\n"
                 "O painel web permite triar a busca geral de forma visual, com capas e pontuações de Hype!\n\n"
                 "👉 Acesse o painel pelo seu navegador local:\n"
-                "🔗 http://localhost:5556\n\n"
+                f"🔗 {WEB_PANEL_URL}\n\n"
                 "💡 **Dica:** Os vídeos baixados pelo painel web também aparecerão na fila **Próximo a Postar** do seu Telegram bot!"
             )
             keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Menu Principal", callback_data="main_menu")]]
