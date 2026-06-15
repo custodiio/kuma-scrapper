@@ -114,8 +114,8 @@ async def run_download_pipeline(
     try:
         async with httpx.AsyncClient(timeout=180.0) as client:
             async with client.stream("GET", api_download_url, params={"url": url, "with_watermark": "false"}) as r:
-                content_type = r.headers.get("Content-Type", "")
-                if r.status_code == 200 and "application/json" not in content_type:
+                resp_content_type = r.headers.get("Content-Type", "")
+                if r.status_code == 200 and "application/json" not in resp_content_type:
                     total_size = int(r.headers.get("Content-Length", 0))
                     downloaded = 0
                     last_update = 0.0
@@ -834,7 +834,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         success = database.add_search_term(term, content_type)
         context.user_data.pop("waiting_for_search_term", None)
         
-        keyboard = [[InlineKeyboardButton("⬅️ Voltar aos Termos", callback_data="menu:search_terms")]]
+        keyboard = [[InlineKeyboardButton("⬅️ Voltar aos Termos", callback_data="menu_search_terms")]]
         if success:
             await update.message.reply_text(
                 f"✅ Termo de busca **{term}** adicionado com sucesso para **{content_type}**!",
