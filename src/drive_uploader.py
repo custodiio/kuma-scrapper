@@ -234,8 +234,8 @@ def upload_pipeline_media(local_video_path: str, local_audio_path: str, progress
             dest_video = os.path.join(recap_uploads_dir, "video_original.mp4")
             dest_audio = os.path.join(recap_uploads_dir, "anime_audio.mp3")
             
-            shutil.copy2(local_video_path, dest_video)
-            shutil.copy2(local_audio_path, dest_audio)
+            shutil.copy(local_video_path, dest_video)
+            shutil.copy(local_audio_path, dest_audio)
             logger.info(f"Arquivos copiados com sucesso para {recap_uploads_dir}!")
         except Exception as e_copy:
             logger.warning(f"Aviso: Não foi possível copiar os arquivos para a pasta de uploads do AnimeRecap: {e_copy}")
