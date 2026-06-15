@@ -17,6 +17,7 @@ from telegram.ext import (
 )
 
 from src import database, media_processor, drive_uploader
+from src.config import DOUYIN_API_BASE
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ async def run_download_pipeline(
         text=f"📥 **Iniciando Download Pipeline...**\n"
              f"📋 **Contexto:** {cat_title} - {type_title}\n"
              f"🔗 **URL:** {url}\n"
-             f"⏳ Conectando à API local na porta 5555...",
+             f"⏳ Conectando à API em {DOUYIN_API_BASE}...",
         parse_mode="Markdown",
         disable_web_page_preview=True
     )
@@ -107,7 +108,7 @@ async def run_download_pipeline(
         try: os.remove(temp_video_path)
         except: pass
         
-    api_download_url = "http://localhost:5555/api/download"
+    api_download_url = f"{DOUYIN_API_BASE}/api/download"
     download_success = False
     
     try:
@@ -570,7 +571,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("🔄 Buscando vídeos recentes dos canais no Bilibili... Por favor, aguarde.")
         
         new_videos_found = []
-        api_url = "http://localhost:5555/api/bilibili/web/fetch_user_post_videos"
+        api_url = f"{DOUYIN_API_BASE}/api/bilibili/web/fetch_user_post_videos"
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             for ch in channels:
@@ -644,7 +645,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         api_status = "🔴 Offline"
         try:
             with httpx.Client(timeout=2.0) as client:
-                res = client.get("http://localhost:5555/docs")
+                res = client.get(f"{DOUYIN_API_BASE}/docs")
                 if res.status_code == 200:
                     api_status = "🟢 Online"
         except:
@@ -652,7 +653,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             
         text = (
             "⚙️ **Painel de Configurações e Status**\n\n"
-            f"🔌 **API Evil0ctal Local:** {api_status} (porta 5555)\n"
+            f"🔌 **API Evil0ctal:** {api_status} ({DOUYIN_API_BASE})\n"
             f"📁 **Diretório Temp:** `{TEMP_DIR}`\n\n"
             "Selecione uma opção de manutenção:"
         )

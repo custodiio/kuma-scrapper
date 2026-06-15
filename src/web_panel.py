@@ -7,6 +7,7 @@ import asyncio
 from fastapi import FastAPI, BackgroundTasks, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from src import database, search_scrapper, media_processor, drive_uploader
+from src.config import DOUYIN_API_BASE
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,7 @@ def perform_background_download(bvid: str, url: str, is_douyin: bool, category: 
         try: os.remove(temp_video_path)
         except: pass
         
-    api_url = "http://localhost:5555/api/download"
+    api_url = f"{DOUYIN_API_BASE}/api/download"
     download_success = False
     
     # 1. Faz o download do stream de vídeo
