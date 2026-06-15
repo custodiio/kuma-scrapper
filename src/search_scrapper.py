@@ -152,17 +152,37 @@ async def run_single_scraping(keyword: str, content_type: str) -> int:
 
 async def run_search_scraping():
     """
-    Roda o fluxo completo de busca geral no Bilibili de forma separada:
-    Anime (新番解说) e Manhwa (韩漫解说).
+    Roda o fluxo completo de busca geral no Bilibili para todos os termos de busca cadastrados.
     """
     logger.info("Iniciando cron job de busca geral...")
     
     # Limpa resultados de busca antigos expirados (mais de 14 dias pendentes) para poupar espaço
     database.clear_old_search_results(days=14)
     
-    inserted_anime = await run_single_scraping("新番解说", "anime")
-    inserted_manhwa = await run_single_scraping("韩漫解说", "manhwa")
+    anime_terms = database.get_search_terms("anime")
+    manhwa_terms = database.get_search_terms("manhwa")
     
+    # Fallbacks de segurança caso não existam termos no banco
+    if not anime_terms:
+        anime_terms = [{"term": "新番解说"}]
+    if not manhwa_terms:
+        manhwa_terms = [{"term": "韩漫解说"}]
+        
+    inserted_anime = 0
+    for item in anime_terms:
+        try:
+            inserted_anime += await run_single_scraping(item["term"], "anime")
+        except Exception as e:
+            logger.error(f"Erro ao buscar termo '{item['term']}' (anime): {e}")
+        
+    inserted_manhwa = 0
+    for item in manhwa_terms:
+        try:
+            inserted_manhwa += await run_single_scraping(item["term"], "manhwa")
+        except Exception as e:
+            logger.error(f"Erro ao buscar termo '{item['term']}' (manhwa): {e}")
+        
     total_inserted = inserted_anime + inserted_manhwa
     logger.info(f"Busca geral concluída. Total de novos vídeos inseridos: {total_inserted}")
     return total_inserted
+

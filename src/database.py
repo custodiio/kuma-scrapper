@@ -74,6 +74,23 @@ def init_db():
     except sqlite3.OperationalError:
         pass # A coluna já existe, ignora o erro
         
+    # Tabela de termos de busca customizados
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS search_terms (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            term TEXT NOT NULL,
+            content_type TEXT NOT NULL, -- 'anime' ou 'manhwa'
+            UNIQUE(term, content_type)
+        )
+    """)
+    
+    # Se a tabela de termos estiver vazia, insere os termos padrão
+    cursor.execute("SELECT COUNT(*) as count FROM search_terms")
+    row = cursor.fetchone()
+    if row and row["count"] == 0:
+        cursor.execute("INSERT OR IGNORE INTO search_terms (term, content_type) VALUES ('新番解说', 'anime')")
+        cursor.execute("INSERT OR IGNORE INTO search_terms (term, content_type) VALUES ('韩漫解说', 'manhwa')")
+        
     conn.commit()
     conn.close()
 
@@ -355,3 +372,50 @@ def clean_database():
         return True
     finally:
         conn.close()
+
+# ----------------- OPERAÇÕES DE TERMOS DE BUSCA -----------------
+
+def add_search_term(term, content_type):
+    """Adiciona um novo termo de busca para um tipo de conteúdo."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT OR IGNORE INTO search_terms (term, content_type)
+            VALUES (?, ?)
+        """, (term.strip(), content_type.strip()))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        print(f"Erro ao adicionar termo de busca: {e}")
+        return False
+    finally:
+        conn.close()
+
+def remove_search_term(term_id):
+    """Remove um termo de busca pelo ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM search_terms WHERE id = ?", (term_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        print(f"Erro ao remover termo de busca: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_search_terms(content_type=None):
+    """Retorna os termos de busca cadastrados."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        if content_type:
+            cursor.execute("SELECT * FROM search_terms WHERE content_type = ? ORDER BY term ASC", (content_type,))
+        else:
+            cursor.execute("SELECT * FROM search_terms ORDER BY content_type, term ASC")
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+

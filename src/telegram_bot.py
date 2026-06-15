@@ -450,6 +450,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     # Cancela qualquer estado de digitação pendente ao navegar
     context.user_data.pop("waiting_for_channel_uid", None)
     context.user_data.pop("waiting_for_douyin_url", None)
+    context.user_data.pop("waiting_for_search_term", None)
 
     # Menu Principal
     if data == "main_menu":
@@ -655,9 +656,10 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             "⚙️ **Painel de Configurações e Status**\n\n"
             f"🔌 **API Evil0ctal:** {api_status} ({DOUYIN_API_BASE})\n"
             f"📁 **Diretório Temp:** `{TEMP_DIR}`\n\n"
-            "Selecione uma opção de manutenção:"
+            "Selecione uma opção de manutenção ou gerencie os termos de busca:"
         )
         keyboard = [
+            [InlineKeyboardButton("🔍 Termos de Busca (Anime/Manhwa)", callback_data="menu:search_terms")],
             [InlineKeyboardButton("🧹 Limpar Arquivos Físicos e Cache", callback_data="config_clear_cache")],
             [InlineKeyboardButton("❌ Limpar Banco de Dados (Limpar Tudo)", callback_data="config_clear_db")],
             [InlineKeyboardButton("⬅️ Voltar ao Menu Principal", callback_data="main_menu")]
@@ -673,6 +675,75 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         success = database.clean_database()
         text = "✅ Banco de dados limpo com sucesso!" if success else "❌ Falha ao limpar o banco de dados."
         keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="menu:config")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    # ─── GERENCIAMENTO DE TERMOS DE BUSCA ───
+    elif data == "menu:search_terms":
+        anime_terms = database.get_search_terms("anime")
+        manhwa_terms = database.get_search_terms("manhwa")
+        
+        anime_list = "\n".join(f"• `{t['term']}`" for t in anime_terms) if anime_terms else "_Nenhum termo cadastrado_"
+        manhwa_list = "\n".join(f"• `{t['term']}`" for t in manhwa_terms) if manhwa_terms else "_Nenhum termo cadastrado_"
+        
+        text = (
+            "🔍 **Gerenciamento de Termos de Busca**\n\n"
+            "Aqui estão os termos cadastrados para a triagem automatizada no Bilibili:\n\n"
+            f"🌸 **Anime:**\n{anime_list}\n\n"
+            f"🇰🇷 **Manhwa:**\n{manhwa_list}\n\n"
+            "Selecione uma opção abaixo para gerenciar:"
+        )
+        keyboard = [
+            [
+                InlineKeyboardButton("➕ Add Anime", callback_data="add_term_prompt:anime"),
+                InlineKeyboardButton("➕ Add Manhwa", callback_data="add_term_prompt:manhwa")
+            ],
+            [
+                InlineKeyboardButton("❌ Del Anime", callback_data="del_term_list:anime"),
+                InlineKeyboardButton("❌ Del Manhwa", callback_data="del_term_list:manhwa")
+            ],
+            [InlineKeyboardButton("⬅️ Voltar", callback_data="menu:config")]
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("add_term_prompt:"):
+        content_type = data.split(":")[1]
+        context.user_data["waiting_for_search_term"] = content_type
+        
+        type_label = "Anime 🌸" if content_type == "anime" else "Manhwa 🇰🇷"
+        
+        text = (
+            f"➕ **Adicionar Termo de Busca - {type_label}**\n\n"
+            "Envie agora no chat o termo que deseja adicionar à busca do Bilibili.\n"
+            "Exemplo:\n`韩漫解说` ou o nome de um anime em chinês."
+        )
+        keyboard = [[InlineKeyboardButton("❌ Cancelar", callback_data="menu:search_terms")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("del_term_list:"):
+        content_type = data.split(":")[1]
+        terms = database.get_search_terms(content_type)
+        
+        type_label = "Anime 🌸" if content_type == "anime" else "Manhwa 🇰🇷"
+        
+        if not terms:
+            keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="menu:search_terms")]]
+            await query.edit_message_text(f"Não há termos de busca cadastrados para {type_label} para remover.", reply_markup=InlineKeyboardMarkup(keyboard))
+            return
+            
+        text = f"❌ **Selecione o termo de {type_label} que deseja remover:**"
+        keyboard = []
+        for t in terms:
+            keyboard.append([InlineKeyboardButton(f"❌ {t['term']}", callback_data=f"del_term_exec:{content_type}:{t['id']}")])
+        keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="menu:search_terms")])
+        
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("del_term_exec:"):
+        _, content_type, term_id = data.split(":")
+        success = database.remove_search_term(int(term_id))
+        
+        text = "✅ Termo de busca removido com sucesso!" if success else "❌ Falha ao remover o termo de busca."
+        keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="menu:search_terms")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
     # Callbacks da fila "Próximo a Postar"
@@ -754,6 +825,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = update.message.text.strip()
     logger.info(f"Mensagem recebida: {text}")
+
+    # 0. Adicionar termo de busca
+    if "waiting_for_search_term" in context.user_data:
+        content_type = context.user_data["waiting_for_search_term"]
+        term = text.strip()
+        
+        success = database.add_search_term(term, content_type)
+        context.user_data.pop("waiting_for_search_term", None)
+        
+        keyboard = [[InlineKeyboardButton("⬅️ Voltar aos Termos", callback_data="menu:search_terms")]]
+        if success:
+            await update.message.reply_text(
+                f"✅ Termo de busca **{term}** adicionado com sucesso para **{content_type}**!",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            await update.message.reply_text(
+                f"❌ Erro ao adicionar o termo de busca (ou o termo já existe).",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        return
 
     # 1. Cadastro de canal
     if "waiting_for_channel_uid" in context.user_data:
