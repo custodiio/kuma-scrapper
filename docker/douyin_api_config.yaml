@@ -1,0 +1,8 @@
+# Config mínimo do Evil0ctal Douyin API
+# O cookie é injetado via variável de ambiente DOUYIN_COOKIE no runtime
+
+Douyin_TikTok_Download_API:
+  # Porta do servidor
+  port: 5555
+  # Host
+  host: "0.0.0.0"

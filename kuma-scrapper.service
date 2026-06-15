@@ -1,0 +1,15 @@
+[Unit]
+Description=Kuma Scrapper - Pipeline & Bot (Douyin/Bilibili)
+After=network.target
+
+[Service]
+Type=simple
+User=mariadelurdesalvesdoprado
+WorkingDirectory=/home/mariadelurdesalvesdoprado/apps/kuma-scrapper
+ExecStart=/home/mariadelurdesalvesdoprado/apps/kuma-scrapper/.venv/bin/python run.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
