@@ -268,7 +268,7 @@ def get_main_menu_keyboard():
         [InlineKeyboardButton("🎬 Mapeamento Vídeos Longos", callback_data="menu:longos")],
         [InlineKeyboardButton("📋 Fila 'Próximo a Postar'", callback_data="menu_queue:select")],
         [InlineKeyboardButton("🌐 Triagem de Busca Web", callback_data="menu:search_web")],
-        [InlineKeyboardButton("⚙️ Configurações / Status", callback_data="menu:config")],
+        [InlineKeyboardButton("⚙️ Configurações / Status", callback_data="menu_config")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -642,7 +642,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     # Configurações / Status
-    elif data == "menu:config":
+    elif data == "menu_config":
         api_status = "🔴 Offline"
         try:
             with httpx.Client(timeout=2.0) as client:
@@ -668,13 +668,13 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
     elif data == "config_clear_cache":
         deep_clean_cache()
-        keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="menu:config")]]
+        keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="menu_config")]]
         await query.edit_message_text("✅ Caches físicos e diretório temporário apagados com sucesso!", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "config_clear_db":
         success = database.clean_database()
         text = "✅ Banco de dados limpo com sucesso!" if success else "❌ Falha ao limpar o banco de dados."
-        keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="menu:config")]]
+        keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="menu_config")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
     # ─── GERENCIAMENTO DE TERMOS DE BUSCA ───
@@ -701,7 +701,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 InlineKeyboardButton("❌ Del Anime", callback_data="del_term_list:anime"),
                 InlineKeyboardButton("❌ Del Manhwa", callback_data="del_term_list:manhwa")
             ],
-            [InlineKeyboardButton("⬅️ Voltar", callback_data="menu:config")]
+            [InlineKeyboardButton("⬅️ Voltar", callback_data="menu_config")]
         ]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
