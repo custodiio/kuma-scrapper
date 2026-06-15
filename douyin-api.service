@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=mariadelurdesalvesdoprado
 WorkingDirectory=/home/mariadelurdesalvesdoprado/apps/kuma-scrapper/douyin_api
-ExecStart=/home/mariadelurdesalvesdoprado/apps/kuma-scrapper/.venv/bin/python main.py
+ExecStart=/home/mariadelurdesalvesdoprado/apps/kuma-scrapper/.venv/bin/python start.py
 Restart=always
 RestartSec=5
 
