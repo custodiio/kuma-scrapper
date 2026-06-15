@@ -659,7 +659,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             "Selecione uma opção de manutenção ou gerencie os termos de busca:"
         )
         keyboard = [
-            [InlineKeyboardButton("🔍 Termos de Busca (Anime/Manhwa)", callback_data="menu:search_terms")],
+            [InlineKeyboardButton("🔍 Termos de Busca (Anime/Manhwa)", callback_data="menu_search_terms")],
             [InlineKeyboardButton("🧹 Limpar Arquivos Físicos e Cache", callback_data="config_clear_cache")],
             [InlineKeyboardButton("❌ Limpar Banco de Dados (Limpar Tudo)", callback_data="config_clear_db")],
             [InlineKeyboardButton("⬅️ Voltar ao Menu Principal", callback_data="main_menu")]
@@ -678,7 +678,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
     # ─── GERENCIAMENTO DE TERMOS DE BUSCA ───
-    elif data == "menu:search_terms":
+    elif data == "menu_search_terms":
         anime_terms = database.get_search_terms("anime")
         manhwa_terms = database.get_search_terms("manhwa")
         
@@ -716,7 +716,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             "Envie agora no chat o termo que deseja adicionar à busca do Bilibili.\n"
             "Exemplo:\n`韩漫解说` ou o nome de um anime em chinês."
         )
-        keyboard = [[InlineKeyboardButton("❌ Cancelar", callback_data="menu:search_terms")]]
+        keyboard = [[InlineKeyboardButton("❌ Cancelar", callback_data="menu_search_terms")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data.startswith("del_term_list:"):
@@ -726,7 +726,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         type_label = "Anime 🌸" if content_type == "anime" else "Manhwa 🇰🇷"
         
         if not terms:
-            keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="menu:search_terms")]]
+            keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="menu_search_terms")]]
             await query.edit_message_text(f"Não há termos de busca cadastrados para {type_label} para remover.", reply_markup=InlineKeyboardMarkup(keyboard))
             return
             
@@ -734,7 +734,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         keyboard = []
         for t in terms:
             keyboard.append([InlineKeyboardButton(f"❌ {t['term']}", callback_data=f"del_term_exec:{content_type}:{t['id']}")])
-        keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="menu:search_terms")])
+        keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="menu_search_terms")])
         
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -743,7 +743,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         success = database.remove_search_term(int(term_id))
         
         text = "✅ Termo de busca removido com sucesso!" if success else "❌ Falha ao remover o termo de busca."
-        keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="menu:search_terms")]]
+        keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="menu_search_terms")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
     # Callbacks da fila "Próximo a Postar"
