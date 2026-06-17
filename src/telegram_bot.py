@@ -559,87 +559,65 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data=f"submenu:{category}:{content_type}")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-    # Mapear e Buscar Novos Vídeos do Bilibili (Apenas Notifica)
+    # Mapear e Buscar Novos Vídeos do Bilibili (Atualizações)
     elif data.startswith("map:"):
         _, category, content_type = data.split(":")
-        channels = database.get_channels(category, content_type)
         
-        if not channels:
-            keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data=f"submenu:{category}:{content_type}")]]
-            await query.edit_message_text("Nenhum canal cadastrado para mapear. Cadastre canais primeiro.", reply_markup=InlineKeyboardMarkup(keyboard))
-            return
+        # Avisa que iniciou
+        await query.edit_message_text("🔄 Rastreando postagens recentes dos canais cadastrados... Por favor, aguarde.")
+        
+        # Executa o mapeamento no banco
+        try:
+            from src import search_scrapper
+            new_count = await search_scrapper.track_channels_updates(content_type)
+        except Exception as e:
+            logger.error(f"Erro ao rastrear canais: {e}")
+            new_count = 0
             
-        await query.edit_message_text("🔄 Buscando vídeos recentes dos canais no Bilibili... Por favor, aguarde.")
-        
-        new_videos_found = []
-        api_url = f"{DOUYIN_API_BASE}/api/bilibili/web/fetch_user_post_videos"
-        
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            for ch in channels:
-                try:
-                    logger.info(f"Mapeando canal: {ch['name']} (UID: {ch['uid']})")
-                    response = await client.get(api_url, params={"uid": ch["uid"], "pn": 1})
-                    
-                    if response.status_code != 200:
-                        logger.error(f"Erro HTTP {response.status_code} para UID {ch['uid']}")
-                        continue
-                        
-                    res_json = response.json()
-                    if res_json.get("code") != 200:
-                        continue
-                        
-                    vlist = res_json.get("data", {}).get("list", {}).get("vlist", [])
-                    
-                    for video in vlist[:5]:
-                        bvid = video.get("bvid")
-                        title = video.get("title")
-                        created_ts = video.get("created")
-                        
-                        if not bvid or not title: continue
-                        
-                        # Se não foi processado/notificado ainda
-                        if not database.is_video_processed(bvid):
-                            pub_date = None
-                            if created_ts:
-                                try:
-                                    pub_date = datetime.fromtimestamp(created_ts).strftime("%Y-%m-%d %H:%M:%S")
-                                except:
-                                    pass
-                                    
-                            new_videos_found.append(title)
-                            
-                            # Registra no SQLite com status='pending'
-                            database.register_video(
-                                bvid=bvid,
-                                title=title,
-                                channel_uid=ch["uid"],
-                                source="channel",
-                                category=category,
-                                content_type=content_type,
-                                status="pending",
-                                published_at=pub_date
-                            )
-                except Exception as e:
-                    logger.error(f"Erro ao mapear canal {ch['name']}: {e}")
-                    continue
-                    
+        # Pega as postagens pendentes e filtra pela duração da categoria (Shorts < 4min, Longos >= 4min)
+        all_updates = database.get_channel_updates(status="pending", content_type=content_type)
+        filtered_updates = []
+        for u in all_updates:
+            is_short = u["duration_seconds"] < 240
+            if category == "shorts" and is_short:
+                filtered_updates.append(u)
+            elif category == "longos" and not is_short:
+                filtered_updates.append(u)
+                
         cat_title = "Shorts" if category == "shorts" else "Vídeos Longos"
         type_title = "Anime" if content_type == "anime" else "Manhwa"
         
-        if not new_videos_found:
-            text = f"✅ **Tudo atualizado!** Nenhum vídeo novo encontrado nos canais de **{cat_title} - {type_title}**."
+        if not filtered_updates:
+            text = f"✅ **Tudo atualizado!** Nenhuma postagem nova de **{cat_title}** encontrada nos canais de **{type_title}**."
+            keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Painel", callback_data=f"submenu:{category}:{content_type}")]]
+            await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         else:
-            text = (
-                f"✨ **Mapeamento concluído com sucesso!**\n\n"
-                f"Foram identificados **{len(new_videos_found)}** novos vídeos nos canais de **{cat_title} - {type_title}**.\n\n"
-                f"📋 Eles já foram adicionados na fila **Próximo a Postar**! Vá até o menu correspondente para baixá-los."
+            await query.message.reply_text(
+                f"✨ **Varredura concluída!** Foram identificadas **{len(filtered_updates)}** novas postagens para triagem em **{cat_title} - {type_title}**.\n\n"
+                f"Selecione as que você deseja enviar para o carrinho de downloads:"
             )
             
-        keyboard = [
-            [InlineKeyboardButton("📋 Ir para a Fila", callback_data=f"queue_type:{category}:{content_type}")],
-            [InlineKeyboardButton("⬅️ Voltar ao Painel", callback_data=f"submenu:{category}:{content_type}")]
-        ]
-        await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            for item in filtered_updates:
+                duration_str = f"{item['duration_seconds'] // 60}:{item['duration_seconds'] % 60:02d}"
+                card_text = (
+                    f"🔔 **Mapeamento: Nova Postagem**\n\n"
+                    f"🎥 **{item['title']}**\n"
+                    f"├ 📺 Canal: {item['author']}\n"
+                    f"├ 🕒 Duração: {duration_str}\n"
+                    f"└ 📅 Publicado em: {item['published_at']}\n\n"
+                    f"🔗 [Ver no Bilibili](https://www.bilibili.com/video/{item['bvid']})"
+                )
+                
+                keyboard = [
+                    [
+                        InlineKeyboardButton("🛒 Add ao Carrinho", callback_data=f"cart_add:{item['bvid']}:{category}:{content_type}"),
+                        InlineKeyboardButton("🗑️ Ignorar", callback_data=f"update_ignore:{item['bvid']}:{category}:{content_type}")
+                    ]
+                ]
+                await query.message.reply_text(card_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown", disable_web_page_preview=True)
+                
+            keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Painel", callback_data=f"submenu:{category}:{content_type}")]]
+            await query.message.reply_text("Fim da lista de atualizações.", reply_markup=InlineKeyboardMarkup(keyboard))
 
     # Configurações / Status
     elif data == "menu_config":
@@ -779,11 +757,49 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     # Ações da fila (Remover/Descartar da fila)
     elif data.startswith("remove_q:") or data.startswith("discard:"):
         _, bvid, category, content_type = data.split(":")
+        database.update_search_result_status(bvid, "pending")
+        database.update_channel_update_status(bvid, "pending")
         success = database.remove_video_from_queue(bvid)
         if success:
             await query.edit_message_text("❌ Vídeo removido/descartado com sucesso da fila!")
         else:
             await query.edit_message_text("❌ Falha ao remover o vídeo do banco.")
+            
+    # Triagem direta no Telegram (Add ao Carrinho)
+    elif data.startswith("cart_add:"):
+        _, bvid, category, content_type = data.split(":")
+        conn = database.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM channel_updates WHERE bvid = ?", (bvid,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            item = dict(row)
+            success = database.register_video(
+                bvid=bvid,
+                title=item["title"],
+                source="channel",
+                category=category,
+                content_type=content_type,
+                status="pending"
+            )
+            if success:
+                database.update_channel_update_status(bvid, "in_cart")
+                await query.edit_message_text(f"🛒 **Adicionado ao Carrinho!**\n\n🎥 {item['title'][:60]}")
+            else:
+                await query.message.reply_text("Erro ao adicionar ao carrinho.")
+        else:
+            await query.message.reply_text("Erro: Postagem não encontrada no banco.")
+            
+    # Triagem direta no Telegram (Ignorar Update)
+    elif data.startswith("update_ignore:"):
+        _, bvid, category, content_type = data.split(":")
+        success = database.update_channel_update_status(bvid, "ignored")
+        if success:
+            await query.edit_message_text("🗑️ **Postagem Ocultada/Ignorada!**")
+        else:
+            await query.message.reply_text("Erro ao atualizar status.")
 
     # Download direto do Bilibili na fila
     elif data.startswith("dl_bili:"):
@@ -855,13 +871,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if match:
             uid = match.group(1).strip()
             name = match.group(2).strip()
-            success = database.add_channel(uid, name, category, content_type)
             
+            await update.message.reply_text("⏳ Buscando último post do canal como referência inicial...")
+            try:
+                from src import search_scrapper
+                latest_video = await search_scrapper.get_latest_video_for_channel(uid)
+                last_ref = latest_video["bvid"] if latest_video else None
+            except Exception as e:
+                logger.error(f"Erro ao obter referência de canal: {e}")
+                last_ref = None
+                
+            success = database.add_channel(uid, name, category, content_type, last_video_ref=last_ref)
             context.user_data.pop("waiting_for_channel_uid", None)
             
             keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Painel", callback_data=f"submenu:{category}:{content_type}")]]
             if success:
-                await update.message.reply_text(f"✅ Canal **{name}** (UID: {uid}) adicionado com sucesso!", reply_markup=InlineKeyboardMarkup(keyboard))
+                ref_msg = f" (Referência inicial: `{last_ref}`)" if last_ref else " (Sem referência inicial)"
+                await update.message.reply_text(f"✅ Canal **{name}** (UID: {uid}) adicionado!{ref_msg}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
             else:
                 await update.message.reply_text("❌ Erro ao salvar o canal no banco de dados.", reply_markup=InlineKeyboardMarkup(keyboard))
         else:

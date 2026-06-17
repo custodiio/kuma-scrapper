@@ -27,24 +27,44 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             uid TEXT UNIQUE NOT NULL,
             name TEXT NOT NULL,
-            category TEXT NOT NULL,      -- 'shorts' ou 'longos'
+            category TEXT NOT NULL,      -- 'shorts' ou 'longos' (obsoleto/all)
             content_type TEXT NOT NULL,  -- 'anime' ou 'manhwa'
+            last_video_ref TEXT,         -- BVID do último post de referência
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     
-    # Tabela de vídeos processados/mapeados (Fase 2)
+    # Tabela de vídeos processados/mapeados (Fase 2 / Carrinho)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS processed_videos (
             bvid TEXT PRIMARY KEY,
             title TEXT NOT NULL,
             channel_uid TEXT,
-            source TEXT NOT NULL,         -- 'channel' (canal cadastrado) ou 'search' (busca geral)
+            source TEXT NOT NULL,         -- 'channel' (canal cadastrado), 'search' (busca geral) ou 'manual'
             category TEXT NOT NULL,       -- 'shorts' ou 'longos'
             content_type TEXT NOT NULL,   -- 'anime' ou 'manhwa'
             status TEXT NOT NULL,         -- 'pending' (mapeado), 'downloaded' (no Drive), 'posted' (publicado)
             published_at TIMESTAMP,
             posted_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (channel_uid) REFERENCES channels(uid) ON DELETE CASCADE
+        )
+    """)
+    
+    # Tabela de atualizações temporárias dos canais mapeados
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS channel_updates (
+            bvid TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            author TEXT NOT NULL,
+            pic TEXT NOT NULL,
+            duration_seconds INTEGER NOT NULL,
+            views INTEGER NOT NULL,
+            likes INTEGER NOT NULL,
+            published_at TIMESTAMP,
+            content_type TEXT NOT NULL,   -- 'anime' ou 'manhwa'
+            channel_uid TEXT,
+            status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'ignored', 'in_cart'
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (channel_uid) REFERENCES channels(uid) ON DELETE CASCADE
         )
@@ -62,13 +82,18 @@ def init_db():
             likes INTEGER NOT NULL,
             hype_score INTEGER NOT NULL,
             published_at TIMESTAMP,
-            status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'downloaded', 'ignored'
+            status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'downloaded', 'ignored', 'in_cart'
             content_type TEXT NOT NULL DEFAULT 'anime', -- 'anime' ou 'manhwa'
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     
-    # Executa migração de coluna caso o banco já existisse sem ela
+    # Executa migrações de colunas caso o banco já existisse sem elas
+    try:
+        cursor.execute("ALTER TABLE channels ADD COLUMN last_video_ref TEXT")
+    except sqlite3.OperationalError:
+        pass # A coluna já existe, ignora o erro
+        
     try:
         cursor.execute("ALTER TABLE search_results ADD COLUMN content_type TEXT NOT NULL DEFAULT 'anime'")
     except sqlite3.OperationalError:
@@ -96,15 +121,15 @@ def init_db():
 
 # ----------------- OPERAÇÕES DE CANAIS -----------------
 
-def add_channel(uid, name, category, content_type):
-    """Adiciona um novo canal para monitoramento."""
+def add_channel(uid, name, category="all", content_type="anime", last_video_ref=None):
+    """Adiciona um novo canal para monitoramento com referência do último vídeo."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT OR REPLACE INTO channels (uid, name, category, content_type)
-            VALUES (?, ?, ?, ?)
-        """, (str(uid).strip(), name.strip(), category, content_type))
+            INSERT OR REPLACE INTO channels (uid, name, category, content_type, last_video_ref)
+            VALUES (?, ?, ?, ?, ?)
+        """, (str(uid).strip(), name.strip(), category, content_type, last_video_ref))
         conn.commit()
         return True
     except Exception as e:
@@ -128,20 +153,16 @@ def remove_channel(uid):
         conn.close()
 
 def get_channels(category=None, content_type=None):
-    """Retorna a lista de canais."""
+    """Retorna a lista de canais (ignora a categoria para unificação de canais)."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        if category and content_type:
+        if content_type:
             cursor.execute("""
                 SELECT * FROM channels 
-                WHERE category = ? AND content_type = ?
+                WHERE content_type = ?
                 ORDER BY name ASC
-            """, (category, content_type))
-        elif category:
-            cursor.execute("SELECT * FROM channels WHERE category = ? ORDER BY name ASC", (category,))
-        elif content_type:
-            cursor.execute("SELECT * FROM channels WHERE content_type = ? ORDER BY name ASC", (content_type,))
+            """, (content_type,))
         else:
             cursor.execute("SELECT * FROM channels ORDER BY name ASC")
         return [dict(row) for row in cursor.fetchall()]
@@ -224,6 +245,31 @@ def mark_video_as_posted(bvid):
     except Exception as e:
         print(f"Erro ao marcar vídeo como postado: {e}")
         return False
+    finally:
+        conn.close()
+
+def update_video_status(bvid, status):
+    """Atualiza o status de um vídeo em processed_videos."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE processed_videos SET status = ? WHERE bvid = ?", (status, bvid))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao atualizar status do vídeo: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_video_by_bvid(bvid):
+    """Retorna os dados de um vídeo em processed_videos."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM processed_videos WHERE bvid = ?", (bvid,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
     finally:
         conn.close()
 
@@ -361,15 +407,92 @@ def clear_old_search_results(days=14):
         conn.close()
 
 def clean_database():
-    """Limpa todo o histórico, canais e buscas."""
+    """Limpa todo o histórico, canais, buscas e atualizações de canais."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("DELETE FROM processed_videos")
         cursor.execute("DELETE FROM channels")
         cursor.execute("DELETE FROM search_results")
+        cursor.execute("DELETE FROM channel_updates")
         conn.commit()
         return True
+    finally:
+        conn.close()
+
+def update_channel_ref(uid, last_video_ref):
+    """Atualiza a referência do último vídeo processado do canal."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE channels SET last_video_ref = ? WHERE uid = ?", (last_video_ref, str(uid).strip()))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao atualizar referência do canal: {e}")
+        return False
+    finally:
+        conn.close()
+
+# ----------------- OPERAÇÕES DE ATUALIZAÇÕES DOS CANAIS (TRIAGEM CANAIS) -----------------
+
+def add_channel_update(bvid, title, author, pic, duration_seconds, views, likes, published_at, content_type, channel_uid):
+    """Adiciona uma nova postagem de canal para triagem temporária."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT OR IGNORE INTO channel_updates (
+                bvid, title, author, pic, duration_seconds, views, likes, published_at, content_type, channel_uid, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        """, (bvid, title, author, pic, duration_seconds, views, likes, published_at, content_type, channel_uid))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        print(f"Erro ao adicionar atualização de canal: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_channel_updates(status="pending", content_type="anime"):
+    """Retorna as atualizações recentes de canais pendentes de triagem."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT * FROM channel_updates 
+            WHERE status = ? AND content_type = ?
+            ORDER BY published_at DESC, created_at DESC
+        """, (status, content_type))
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+def update_channel_update_status(bvid, status):
+    """Atualiza o status do vídeo mapeado do canal (ex: 'ignored', 'in_cart')."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE channel_updates SET status = ? WHERE bvid = ?", (status, bvid))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao atualizar status do update de canal: {e}")
+        return False
+    finally:
+        conn.close()
+
+def remove_channel_update(bvid):
+    """Remove a atualização da tabela temporária."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM channel_updates WHERE bvid = ?", (bvid,))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao remover update do canal: {e}")
+        return False
     finally:
         conn.close()
 

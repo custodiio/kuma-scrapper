@@ -186,3 +186,168 @@ async def run_search_scraping():
     logger.info(f"Busca geral concluída. Total de novos vídeos inseridos: {total_inserted}")
     return total_inserted
 
+
+async def get_latest_video_for_channel(uid: str) -> dict | None:
+    """Busca o vídeo mais recente postado por um canal (usado para referência inicial)."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.bilibili.com/"
+    }
+    from src.config import DOUYIN_API_BASE
+    api_url = f"{DOUYIN_API_BASE}/api/bilibili/web/fetch_user_post_videos"
+    
+    async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=15.0) as client:
+        try:
+            logger.info(f"Buscando vídeo mais recente do canal UID {uid} para referência...")
+            response = await client.get(api_url, params={"uid": uid, "pn": 1})
+            if response.status_code != 200:
+                logger.error(f"Erro HTTP {response.status_code} na busca do canal UID {uid}")
+                return None
+                
+            res_json = response.json()
+            if res_json.get("code") != 200:
+                logger.error(f"Erro na API Bilibili (code={res_json.get('code')}) para UID {uid}")
+                return None
+                
+            vlist = res_json.get("data", {}).get("list", {}).get("vlist", [])
+            if not vlist:
+                logger.info(f"Nenhum vídeo retornado para UID {uid}")
+                return None
+                
+            # O primeiro item é o mais recente
+            video = vlist[0]
+            pic = video.get("pic", "")
+            if pic and pic.startswith("//"):
+                pic = "https:" + pic
+                
+            return {
+                "bvid": video.get("bvid"),
+                "title": video.get("title"),
+                "pic": pic,
+                "created": video.get("created"),
+                "length": video.get("length", "00:00")
+            }
+        except Exception as e:
+            logger.error(f"Erro ao obter postagens do canal UID {uid}: {e}")
+            return None
+
+async def track_channels_updates(content_type: str) -> int:
+    """Varre todos os canais de um content_type buscando novas postagens desde a última referência."""
+    logger.info(f"Iniciando varredura de canais para {content_type}...")
+    
+    channels = database.get_channels(content_type=content_type)
+    if not channels:
+        logger.info(f"Nenhum canal cadastrado para {content_type}.")
+        return 0
+        
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.bilibili.com/"
+    }
+    from src.config import DOUYIN_API_BASE
+    api_url = f"{DOUYIN_API_BASE}/api/bilibili/web/fetch_user_post_videos"
+    
+    total_new_updates = 0
+    
+    async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=20.0) as client:
+        for ch in channels:
+            uid = ch["uid"]
+            name = ch["name"]
+            last_ref = ch.get("last_video_ref")
+            
+            try:
+                logger.info(f"Rastreando novos vídeos de: {name} (UID: {uid}) - Ref Atual: {last_ref}")
+                response = await client.get(api_url, params={"uid": uid, "pn": 1})
+                
+                if response.status_code != 200:
+                    logger.error(f"Erro HTTP {response.status_code} para canal {name}")
+                    continue
+                    
+                res_json = response.json()
+                if res_json.get("code") != 200:
+                    logger.error(f"Erro na API (code={res_json.get('code')}) para canal {name}")
+                    continue
+                    
+                vlist = res_json.get("data", {}).get("list", {}).get("vlist", [])
+                if not vlist:
+                    logger.info(f"Canal {name} não possui postagens ou a lista está vazia.")
+                    continue
+                
+                # Caso o canal não tenha referência (novo canal):
+                if not last_ref:
+                    # Define o vídeo mais recente como a referência inicial
+                    new_ref = vlist[0].get("bvid")
+                    if new_ref:
+                        database.update_channel_ref(uid, new_ref)
+                        logger.info(f"Canal {name} inicializado com last_video_ref = {new_ref} (Sem adicionar atualizações).")
+                    continue
+                
+                # Rastreamento de postagens novas
+                new_videos = []
+                for video in vlist:
+                    bvid = video.get("bvid")
+                    if not bvid:
+                        continue
+                        
+                    # Se encontrarmos o último vídeo de referência, paramos (os anteriores são mais antigos)
+                    if bvid == last_ref:
+                        break
+                        
+                    new_videos.append(video)
+                
+                if new_videos:
+                    logger.info(f"Detectados {len(new_videos)} novos vídeos para o canal {name}.")
+                    
+                    # Insere os novos vídeos no banco como channel_updates
+                    for video in new_videos:
+                        bvid = video.get("bvid")
+                        title = video.get("title", "")
+                        pic = video.get("pic", "")
+                        if pic and pic.startswith("//"):
+                            pic = "https:" + pic
+                            
+                        length_str = video.get("length", "00:00")
+                        duration_seconds = duration_str_to_seconds(length_str)
+                        
+                        # Views e Likes
+                        views = int(video.get("play", 0))
+                        likes = int(video.get("comment", 0)) # comentário usado como proxy de likes
+                        
+                        created_ts = video.get("created")
+                        pub_date = None
+                        if created_ts:
+                            try:
+                                pub_date = datetime.fromtimestamp(created_ts).strftime("%Y-%m-%d %H:%M:%S")
+                            except:
+                                pass
+                                
+                        success = database.add_channel_update(
+                            bvid=bvid,
+                            title=title,
+                            author=name, # nome do canal
+                            pic=pic,
+                            duration_seconds=duration_seconds,
+                            views=views,
+                            likes=likes,
+                            published_at=pub_date,
+                            content_type=content_type,
+                            channel_uid=uid
+                        )
+                        if success:
+                            total_new_updates += 1
+                            
+                    # Atualiza a referência do canal para o vídeo mais recente retornado
+                    most_recent_bvid = vlist[0].get("bvid")
+                    if most_recent_bvid:
+                        database.update_channel_ref(uid, most_recent_bvid)
+                        logger.info(f"Referência do canal {name} atualizada para {most_recent_bvid}")
+                else:
+                    logger.info(f"Nenhuma postagem nova para o canal {name}.")
+                    
+            except Exception as e:
+                logger.error(f"Erro ao mapear canal {name}: {e}")
+                continue
+                
+    logger.info(f"Varredura de canais finalizada para {content_type}. Total de novas postagens: {total_new_updates}")
+    return total_new_updates
+

@@ -43,7 +43,7 @@ AUTHORIZED_USERS: list[str] = [
 
 DOUYIN_COOKIE: str = os.getenv("DOUYIN_COOKIE", "")
 DOUYIN_API_BASE: str = os.getenv("DOUYIN_API_BASE", "http://localhost:5555")
-WEB_PANEL_URL: str = os.getenv("WEB_PANEL_URL", "http://localhost:5556")
+WEB_PANEL_URL: str = os.getenv("WEB_PANEL_URL", "https://animesrecaps.me/scrapper")
 
 
 # ─── Busca ───────────────────────────────────────────────────────────────────
