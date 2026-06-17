@@ -116,6 +116,15 @@ def init_db():
         cursor.execute("INSERT OR IGNORE INTO search_terms (term, content_type) VALUES ('新番解说', 'anime')")
         cursor.execute("INSERT OR IGNORE INTO search_terms (term, content_type) VALUES ('韩漫解说', 'manhwa')")
         
+    # Tabela de controle de sessões da triagem web
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS web_sessions (
+            token TEXT PRIMARY KEY,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+        
     conn.commit()
     conn.close()
 
@@ -407,7 +416,7 @@ def clear_old_search_results(days=14):
         conn.close()
 
 def clean_database():
-    """Limpa todo o histórico, canais, buscas e atualizações de canais."""
+    """Limpa todo o histórico, canais, buscas, atualizações de canais e sessões web."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -415,6 +424,7 @@ def clean_database():
         cursor.execute("DELETE FROM channels")
         cursor.execute("DELETE FROM search_results")
         cursor.execute("DELETE FROM channel_updates")
+        cursor.execute("DELETE FROM web_sessions")
         conn.commit()
         return True
     finally:
@@ -539,6 +549,86 @@ def get_search_terms(content_type=None):
         else:
             cursor.execute("SELECT * FROM search_terms ORDER BY content_type, term ASC")
         return [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+# ----------------- OPERAÇÕES DE SESSÃO WEB -----------------
+
+def create_web_session(token, duration_minutes=30):
+    """Cria uma nova sessão web ativa com expiração em X minutos."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        expires_at = (datetime.now() + timedelta(minutes=duration_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("""
+            INSERT OR REPLACE INTO web_sessions (token, expires_at)
+            VALUES (?, ?)
+        """, (token, expires_at))
+        conn.commit()
+        # Limpa as sessões expiradas ao mesmo tempo para manter o banco limpo
+        cleanup_expired_sessions()
+        return True
+    except Exception as e:
+        print(f"Erro ao criar sessão web: {e}")
+        return False
+    finally:
+        conn.close()
+
+def validate_web_session(token):
+    """Verifica se a sessão é válida e não está expirada."""
+    if not token:
+        return False
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("""
+            SELECT 1 FROM web_sessions 
+            WHERE token = ? AND expires_at > ?
+        """, (token, now_str))
+        return cursor.fetchone() is not None
+    except Exception as e:
+        print(f"Erro ao validar sessão web: {e}")
+        return False
+    finally:
+        conn.close()
+
+def renew_web_session(token, duration_minutes=30):
+    """Estende a expiração de uma sessão ativa por mais X minutos."""
+    if not token:
+        return False
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Primeiro verifica se a sessão ainda é válida (só renovamos sessões ativas)
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("SELECT 1 FROM web_sessions WHERE token = ? AND expires_at > ?", (token, now_str))
+        if not cursor.fetchone():
+            return False
+            
+        new_expires_at = (datetime.now() + timedelta(minutes=duration_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("UPDATE web_sessions SET expires_at = ? WHERE token = ?", (new_expires_at, token))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao renovar sessão web: {e}")
+        return False
+    finally:
+        conn.close()
+
+def cleanup_expired_sessions():
+    """Remove sessões expiradas do banco de dados."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("DELETE FROM web_sessions WHERE expires_at <= ?", (now_str,))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao limpar sessões expiradas: {e}")
+        return False
     finally:
         conn.close()
 

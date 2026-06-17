@@ -465,11 +465,21 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         
         # Direciona para a triagem web
         if category == "search_web":
+            import secrets
+            # Gera um token seguro de 32 hex chars (16 bytes)
+            session_token = secrets.token_hex(16)
+            # Salva no banco de dados com validade de 30 minutos
+            database.create_web_session(session_token, duration_minutes=30)
+            
+            # Monta a URL com o token
+            separator = "&" if "?" in WEB_PANEL_URL else "?"
+            session_url = f"{WEB_PANEL_URL}{separator}session={session_token}"
+            
             text = (
                 "🌐 **Painel de Triagem Web**\n\n"
-                "O painel web permite triar a busca geral de forma visual, com capas e pontuações de Hype!\n\n"
-                "👉 Acesse o painel pelo seu navegador local:\n"
-                f"🔗 {WEB_PANEL_URL}\n\n"
+                "O painel web permite triar a busca geral e atualizações de canais de forma visual, com capas e pontuações de Hype!\n\n"
+                "👉 Acesse o painel pelo link abaixo (válido por 30 minutos):\n"
+                f"🔗 {session_url}\n\n"
                 "💡 **Dica:** Os vídeos baixados pelo painel web também aparecerão na fila **Próximo a Postar** do seu Telegram bot!"
             )
             keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Menu Principal", callback_data="main_menu")]]

@@ -3,8 +3,8 @@ import re
 import time
 import httpx
 import logging
-from fastapi import FastAPI, BackgroundTasks, Form, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, BackgroundTasks, Form, HTTPException, Request, Response, Cookie, Query
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from src import database, search_scrapper, media_processor, drive_uploader
 from src.config import DOUYIN_API_BASE
 
@@ -12,6 +12,19 @@ logger = logging.getLogger(__name__)
 
 ROOT_PATH = os.getenv("ROOT_PATH", "")
 app = FastAPI(title="Kuma Scrapper - Painel de Triagem Web", root_path=ROOT_PATH)
+
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    # Se for uma rota de API, valida o token do cookie
+    if request.url.path.startswith("/api/"):
+        token = request.cookies.get("scrapper_session")
+        if not database.validate_web_session(token):
+            return JSONResponse(
+                status_code=401,
+                content={"ok": False, "message": "Sessão inválida ou expirada. Reabra o link no bot do Telegram."}
+            )
+    response = await call_next(request)
+    return response
 
 # Diretório temporário para downloads locais
 TEMP_DIR = os.path.join("data", "temp_media")
@@ -475,15 +488,163 @@ async def api_delete_term(term_id: int):
     success = database.remove_search_term(term_id)
     return {"ok": success}
 
+@app.post("/api/session/renew")
+async def api_renew_session(request: Request):
+    """Renova a validade da sessão ativa do usuário."""
+    token = request.cookies.get("scrapper_session")
+    if not token:
+        raise HTTPException(status_code=401, detail="Nenhum token encontrado.")
+    
+    success = database.renew_web_session(token, 30)
+    if success:
+        return {"ok": True, "message": "Sessão renovada com sucesso!"}
+    else:
+        raise HTTPException(status_code=401, detail="Sessão expirada ou inválida. Reabra o link no bot.")
+
 # ─── PÁGINA HTML PRINCIPAL ───────────────────────────────────────────────────
 
+def get_access_denied_page():
+    return """<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acesso Negado - Kuma Scrapper</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
+        body {
+            background-color: #060610;
+            color: #e2e8f0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+        }
+        .container {
+            max-width: 500px;
+            width: 100%;
+            background: rgba(20, 20, 38, 0.7);
+            backdrop-filter: blur(16px);
+            border-radius: 24px;
+            border: 1px solid rgba(255, 75, 75, 0.2);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(255, 75, 75, 0.05);
+            padding: 40px;
+            text-align: center;
+        }
+        .icon {
+            font-size: 4rem;
+            margin-bottom: 24px;
+            animation: pulse 2s infinite;
+        }
+        h2 {
+            font-size: 1.8rem;
+            margin-bottom: 12px;
+            font-weight: 700;
+            background: linear-gradient(90deg, #ff4b4b, #bb86fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        p {
+            font-size: 1rem;
+            color: #a0aec0;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+        .instructions {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 16px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            color: #cbd5e0;
+            text-align: left;
+            margin-bottom: 30px;
+        }
+        .instructions ol {
+            padding-left: 20px;
+        }
+        .instructions li {
+            margin-bottom: 8px;
+        }
+        .btn-bot {
+            display: inline-block;
+            background: linear-gradient(135deg, #6200ee, #3700b3);
+            color: #fff;
+            text-decoration: none;
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-weight: 600;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(98, 0, 238, 0.3);
+        }
+        .btn-bot:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(98, 0, 238, 0.5);
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); text-shadow: 0 0 10px rgba(255,75,75,0.3); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">🔒</div>
+        <h2>Acesso Negado ou Expirado</h2>
+        <p>Por motivos de segurança, você não pode acessar o painel de triagem diretamente sem uma sessão ativa.</p>
+        <div class="instructions">
+            <strong>Como obter acesso:</strong>
+            <ol style="margin-top: 8px;">
+                <li>Abra o Telegram e acesse o bot do <strong>Kuma Scrapper</strong>.</li>
+                <li>No menu principal, clique em <strong>🌐 Visualizar Triagem de Busca Web</strong>.</li>
+                <li>Um link de acesso seguro e temporário será gerado exclusivamente para você.</li>
+            </ol>
+        </div>
+        <a href="https://t.me" target="_blank" class="btn-bot">🤖 Ir para o Telegram</a>
+    </div>
+</body>
+</html>
+"""
+
 @app.get("/", response_class=HTMLResponse)
-async def index(tab: str = "search", type: str = "anime"):
-    """Renderiza o Painel de Triagem Web unificado de 5 abas."""
+async def index(
+    request: Request,
+    response: Response,
+    tab: str = "search",
+    type: str = "anime",
+    session: str = Query(None)
+):
+    """Renderiza o Painel de Triagem Web unificado de 5 abas com validação de sessão."""
     if type not in ["anime", "manhwa"]:
         type = "anime"
     if tab not in ["search", "updates", "cart", "channels", "terms"]:
         tab = "search"
+        
+    # 1. Verifica se foi passado token na query (login inicial a partir do Bot)
+    if session:
+        if database.validate_web_session(session):
+            # Sessão válida! Define o cookie e redireciona para a rota limpa
+            redirect_url = f"{ROOT_PATH}/?tab={tab}&type={type}"
+            redir_resp = RedirectResponse(url=redirect_url, status_code=303)
+            redir_resp.set_cookie(
+                key="scrapper_session",
+                value=session,
+                max_age=1800, # 30 min
+                httponly=True,
+                samesite="lax",
+                secure=False
+            )
+            return redir_resp
+        else:
+            return HTMLResponse(content=get_access_denied_page(), status_code=401)
+            
+    # 2. Se não veio na query, verifica se o cookie existente é válido
+    cookie_token = request.cookies.get("scrapper_session")
+    if not database.validate_web_session(cookie_token):
+        return HTMLResponse(content=get_access_denied_page(), status_code=401)
         
     type_title = "Anime 🌸" if type == "anime" else "Manhwa 🇰🇷"
     
@@ -786,6 +947,22 @@ async def index(tab: str = "search", type: str = "anime"):
             color: #e2e8f0;
             min-height: 100vh;
             padding: 24px;
+        }}
+        .btn-renew-session {{
+            background: rgba(3, 218, 198, 0.05);
+            color: #03dac6;
+            border: 1px solid rgba(3, 218, 198, 0.25);
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin-right: 8px;
+        }}
+        .btn-renew-session:hover {{
+            background: rgba(3, 218, 198, 0.15);
+            border-color: #03dac6;
+            box-shadow: 0 0 15px rgba(3, 218, 198, 0.15);
         }}
         header {{
             max-width: 1200px;
@@ -1248,7 +1425,8 @@ async def index(tab: str = "search", type: str = "anime"):
             <h1>🦊 Kuma Scrapper</h1>
             <p>Gerenciador de Mapeamentos & Fila de Downloads (Bilibili / Douyin)</p>
         </div>
-        <div id="header-action-container">
+        <div id="header-action-container" style="display: flex; gap: 12px; align-items: center;">
+            <button class="btn-renew-session" onclick="renewSession()">🔄 Estender Sessão</button>
             {header_action_button}
         </div>
     </header>
@@ -1291,6 +1469,48 @@ async def index(tab: str = "search", type: str = "anime"):
         const ROOT_PATH = "{ROOT_PATH}";
         const ACTIVE_TYPE = "{type}";
         const ACTIVE_TAB = "{tab}";
+
+        // Interceptor de fetch para tratar 401 Unauthorized globalmente
+        const originalFetch = window.fetch;
+        window.fetch = async function(...args) {{
+            const response = await originalFetch(...args);
+            if (response.status === 401) {{
+                alert("Sessão expirada ou inválida! Por favor, gere um novo link de acesso no Telegram.");
+                window.location.reload();
+                return new Promise(() => {{}}); // Interrompe fluxos subsequentes
+            }}
+            return response;
+        }};
+
+        async function renewSession() {{
+            const btn = document.querySelector('.btn-renew-session');
+            if (!btn) return;
+            const originalText = btn.textContent;
+            btn.textContent = "⏳ Estendendo...";
+            btn.disabled = true;
+            try {{
+                const response = await fetch(ROOT_PATH + '/api/session/renew', {{ method: 'POST' }});
+                const data = await response.json();
+                if (response.ok && data.ok) {{
+                    btn.textContent = "✅ Sessão Estendida!";
+                    btn.style.borderColor = "#10b981";
+                    btn.style.color = "#10b981";
+                    setTimeout(() => {{
+                        btn.textContent = originalText;
+                        btn.style.borderColor = "rgba(3, 218, 198, 0.25)";
+                        btn.style.color = "#03dac6";
+                        btn.disabled = false;
+                    }}, 3000);
+                }} else {{
+                    alert("Erro ao estender sessão: " + (data.message || "Sessão inválida. Reabra pelo bot."));
+                    window.location.reload();
+                }}
+            }} catch(e) {{
+                alert("Erro ao estender sessão: " + e);
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }}
+        }}
 
         async function addToCart(bvid, title, duration, type, pic, source) {{
             const formData = new FormData();
