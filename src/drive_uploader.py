@@ -122,7 +122,7 @@ class DriveUploader:
             now_rfc3339 = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
             if existing_files:
-                # Atualiza o arquivo mais recente e garante que a data de modificação reflita o momento do upload
+                # Atualiza o arquivo mais recente e força a gravação do modifiedTime correto
                 file_id = existing_files[0]["id"]
                 logger.info(f"Atualizando arquivo existente no Drive: {drive_dest_path} (ID: {file_id})")
                 body = {
@@ -138,7 +138,7 @@ class DriveUploader:
                     except Exception as ed:
                         logger.warning(f"Erro ao remover arquivo duplicado antigo: {ed}")
             else:
-                # Cria um novo arquivo com a data de modificação marcada para agora
+                # Cria um novo arquivo com o modifiedTime atualizado
                 body = {
                     "name": filename,
                     "parents": [parent_id],
