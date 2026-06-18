@@ -249,36 +249,5 @@ def upload_pipeline_media(local_video_path: str, local_audio_path: str, progress
     else:
         logger.info("Cópia local pulada: Pasta de uploads do AnimeRecap não configurada ou não encontrada localmente.")
 
-    # 4. Envia os arquivos via API HTTP para garantir que a pasta do AnimeRecap receba os arquivos com timestamps corretos
-    try:
-        import requests
-        import urllib.parse
-        
-        web_panel_url = os.getenv("WEB_PANEL_URL", "https://animesrecaps.me/scrapper")
-        anime_recap_base_url = web_panel_url.replace("/scrapper", "").rstrip("/")
-        
-        logger.info(f"Enviando arquivos via API HTTP para o AnimeRecap ({anime_recap_base_url})...")
-        
-        # Upload do vídeo
-        video_url = f"{anime_recap_base_url}/api/upload-file?type=video&name=video_original.mp4"
-        with open(local_video_path, "rb") as f:
-            res_video = requests.post(video_url, data=f, headers={"Content-Type": "application/octet-stream"})
-            if res_video.status_code == 200:
-                logger.info("Vídeo enviado com sucesso via API do AnimeRecap!")
-            else:
-                logger.warning(f"Erro no envio do vídeo via API: {res_video.status_code} - {res_video.text}")
-                
-        # Upload do áudio
-        audio_url = f"{anime_recap_base_url}/api/upload-file?type=audio&name=anime_audio.mp3"
-        with open(local_audio_path, "rb") as f:
-            res_audio = requests.post(audio_url, data=f, headers={"Content-Type": "application/octet-stream"})
-            if res_audio.status_code == 200:
-                logger.info("Áudio enviado com sucesso via API do AnimeRecap!")
-            else:
-                logger.warning(f"Erro no envio do áudio via API: {res_audio.status_code} - {res_audio.text}")
-                
-    except Exception as e_api:
-        logger.warning(f"Aviso: Não foi possível enviar os arquivos via API HTTP para o AnimeRecap: {e_api}")
-
     logger.info("Uploads para o Google Drive concluídos com sucesso!")
     return True

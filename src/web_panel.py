@@ -130,62 +130,116 @@ def perform_background_download(bvid: str, url: str, is_douyin: bool, category: 
         try: os.remove(temp_video_path)
         except: pass
         
-    api_url = f"{DOUYIN_API_BASE}/api/download"
     download_success = False
     
-    # 1. Faz o download do stream de vídeo
-    try:
-        with httpx.Client(timeout=180.0) as client:
-            with client.stream("GET", api_url, params={"url": url, "with_watermark": "false"}) as r:
-                resp_content_type = r.headers.get("Content-Type", "")
-                if r.status_code == 200 and "application/json" not in resp_content_type:
-                    total_size = int(r.headers.get("Content-Length", 0))
-                    downloaded = 0
-                    last_update = 0.0
-                    last_percent = 0
-                    
-                    with open(temp_video_path, "wb") as f:
-                        for chunk in r.iter_bytes():
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            if total_size > 0:
-                                percent = int((downloaded / total_size) * 100)
-                                now = time.time()
-                                if (percent - last_percent >= 20) or (now - last_update >= 10.0) or (percent == 100):
-                                    last_percent = percent
-                                    last_update = now
-                                    if tg_msg_id:
-                                        tg_text = (
-                                            f"📥 **Triagem Web: Baixando vídeo...**\n"
-                                            f"📋 **Contexto:** {cat_title} - {type_title}\n"
-                                            f"⏳ Progresso: **{percent}%** ({downloaded/(1024*1024):.1f}MB / {total_size/(1024*1024):.1f}MB)..."
-                                        )
-                                        send_telegram_status(tg_text, tg_msg_id)
-                                        
-                    download_success = os.path.exists(temp_video_path) and os.path.getsize(temp_video_path) > 0
-                else:
-                    r.read()
-                    try:
-                        err_data = r.json()
-                        err_msg = err_data.get("message", "Erro interno da API local")
-                    except Exception:
-                        err_msg = f"HTTP {r.status_code}: {r.text[:200]}"
-                    
-                    logger.error(f"Erro no download pela API local para {bvid}: {err_msg}")
-                    if tg_msg_id:
-                        send_telegram_status(f"❌ **Falha ao realizar download** do vídeo para BVID `{bvid}` na API local:\n`{err_msg}`", tg_msg_id)
-                    database.update_video_status(bvid, "pending")
-                    database.update_search_result_status(bvid, "pending")
-                    database.update_channel_update_status(bvid, "pending")
-                    return
-    except Exception as e:
-        logger.error(f"Erro ao baixar vídeo na API em background: {e}")
-        if tg_msg_id:
-            send_telegram_status(f"❌ **Falha na requisição** do download para BVID `{bvid}`:\n`{str(e)}`", tg_msg_id)
-        database.update_video_status(bvid, "pending")
-        database.update_search_result_status(bvid, "pending")
-        database.update_channel_update_status(bvid, "pending")
-        return
+    # Se não for Douyin (ou seja, se for Bilibili), tenta baixar via yt-dlp para obter qualidade máxima
+    if not is_douyin:
+        try:
+            import subprocess
+            logger.info(f"Tentando baixar Bilibili via yt-dlp para {url} (BVID={bvid})...")
+            bili_cookie = os.getenv("BILIBILI_COOKIE", "")
+            
+            # Comando base do yt-dlp para obter qualidade máxima e fundir em MP4
+            cmd = [
+                "yt-dlp",
+                "-f", "bestvideo+bestaudio/best",
+                "--merge-output-format", "mp4",
+                "-o", temp_video_path,
+                url
+            ]
+            
+            if bili_cookie:
+                cmd.extend(["--add-header", f"Cookie: {bili_cookie}"])
+                
+            cmd.extend(["--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"])
+            
+            # Roda subprocess com progresso
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            
+            last_percent = 0
+            last_update = time.time()
+            progress_regex = re.compile(r"\[download\]\s+(\d+\.\d+)%")
+            
+            for line in process.stdout:
+                match = progress_regex.search(line)
+                if match:
+                    percent = int(float(match.group(1)))
+                    now = time.time()
+                    if (percent - last_percent >= 20) or (now - last_update >= 10.0) or (percent == 100):
+                        last_percent = percent
+                        last_update = now
+                        if tg_msg_id:
+                            tg_text = (
+                                f"📥 **Triagem Web: Baixando vídeo (yt-dlp)...**\n"
+                                f"📋 **Contexto:** {cat_title} - {type_title}\n"
+                                f"⏳ Progresso: **{percent}%**..."
+                            )
+                            send_telegram_status(tg_text, tg_msg_id)
+            
+            process.wait()
+            if process.returncode == 0 and os.path.exists(temp_video_path) and os.path.getsize(temp_video_path) > 0:
+                download_success = True
+                logger.info(f"Download com yt-dlp concluído com sucesso para BVID={bvid}!")
+            else:
+                logger.warning(f"yt-dlp falhou com código {process.returncode} para BVID={bvid}. Tentando fallback da API local...")
+        except Exception as e_yt:
+            logger.error(f"Erro ao baixar com yt-dlp para BVID={bvid}: {e_yt}. Tentando fallback da API local...")
+            
+    # Fallback ou Padrão (Douyin) via API local (Evil0ctal)
+    if not download_success:
+        api_url = f"{DOUYIN_API_BASE}/api/download"
+        try:
+            with httpx.Client(timeout=180.0) as client:
+                with client.stream("GET", api_url, params={"url": url, "with_watermark": "false"}) as r:
+                    resp_content_type = r.headers.get("Content-Type", "")
+                    if r.status_code == 200 and "application/json" not in resp_content_type:
+                        total_size = int(r.headers.get("Content-Length", 0))
+                        downloaded = 0
+                        last_update = 0.0
+                        last_percent = 0
+                        
+                        with open(temp_video_path, "wb") as f:
+                            for chunk in r.iter_bytes():
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                if total_size > 0:
+                                    percent = int((downloaded / total_size) * 100)
+                                    now = time.time()
+                                    if (percent - last_percent >= 20) or (now - last_update >= 10.0) or (percent == 100):
+                                        last_percent = percent
+                                        last_update = now
+                                        if tg_msg_id:
+                                            tg_text = (
+                                                f"📥 **Triagem Web: Baixando vídeo (API)...**\n"
+                                                f"📋 **Contexto:** {cat_title} - {type_title}\n"
+                                                f"⏳ Progresso: **{percent}%** ({downloaded/(1024*1024):.1f}MB / {total_size/(1024*1024):.1f}MB)..."
+                                            )
+                                            send_telegram_status(tg_text, tg_msg_id)
+                                            
+                        download_success = os.path.exists(temp_video_path) and os.path.getsize(temp_video_path) > 0
+                    else:
+                        r.read()
+                        try:
+                            err_data = r.json()
+                            err_msg = err_data.get("message", "Erro interno da API local")
+                        except Exception:
+                            err_msg = f"HTTP {r.status_code}: {r.text[:200]}"
+                        
+                        logger.error(f"Erro no download pela API local para {bvid}: {err_msg}")
+                        if tg_msg_id:
+                            send_telegram_status(f"❌ **Falha ao realizar download** do vídeo para BVID `{bvid}` na API local:\n`{err_msg}`", tg_msg_id)
+                        database.update_video_status(bvid, "pending")
+                        database.update_search_result_status(bvid, "pending")
+                        database.update_channel_update_status(bvid, "pending")
+                        return
+        except Exception as e:
+            logger.error(f"Erro ao baixar vídeo na API em background: {e}")
+            if tg_msg_id:
+                send_telegram_status(f"❌ **Falha na requisição** do download para BVID `{bvid}`:\n`{str(e)}`", tg_msg_id)
+            database.update_video_status(bvid, "pending")
+            database.update_search_result_status(bvid, "pending")
+            database.update_channel_update_status(bvid, "pending")
+            return
         
     if not download_success:
         logger.error(f"Falha no download para bvid={bvid}")
