@@ -209,7 +209,8 @@ async def get_latest_video_for_channel(uid: str) -> dict | None:
                 logger.error(f"Erro na API Bilibili (code={res_json.get('code')}) para UID {uid}")
                 return None
                 
-            vlist = res_json.get("data", {}).get("list", {}).get("vlist", [])
+            # A API local envelopa o retorno do Bilibili na chave "data", e o Bilibili usa "data" internamente.
+            vlist = res_json.get("data", {}).get("data", {}).get("list", {}).get("vlist", [])
             if not vlist:
                 logger.info(f"Nenhum vídeo retornado para UID {uid}")
                 return None
@@ -268,7 +269,8 @@ async def track_channels_updates(content_type: str) -> int:
                     logger.error(f"Erro na API (code={res_json.get('code')}) para canal {name}")
                     continue
                     
-                vlist = res_json.get("data", {}).get("list", {}).get("vlist", [])
+                # A API local envelopa o retorno do Bilibili na chave "data", e o Bilibili usa "data" internamente.
+                vlist = res_json.get("data", {}).get("data", {}).get("list", {}).get("vlist", [])
                 if not vlist:
                     logger.info(f"Canal {name} não possui postagens ou a lista está vazia.")
                     continue
