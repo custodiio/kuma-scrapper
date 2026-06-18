@@ -28,7 +28,7 @@ async def fetch_data(url: str, headers: dict = None):
     elif isinstance(headers, dict) and 'headers' in headers:
         headers = headers['headers']
     async with httpx.AsyncClient() as client:
-        response = await client.get(url, headers=headers)
+        response = await client.get(url, headers=headers, follow_redirects=True)
         response.raise_for_status()  # 确保响应是成功的
         return response
 
@@ -42,7 +42,7 @@ async def fetch_data_stream(url: str, request:Request , headers: dict = None, fi
         headers = headers['headers']
     async with httpx.AsyncClient() as client:
         # 启用流式请求
-        async with client.stream("GET", url, headers=headers) as response:
+        async with client.stream("GET", url, headers=headers, follow_redirects=True) as response:
             response.raise_for_status()
 
             # 流式保存文件
@@ -55,6 +55,7 @@ async def fetch_data_stream(url: str, request:Request , headers: dict = None, fi
                         return False
                     await out_file.write(chunk)
             return True
+
 
 async def merge_bilibili_video_audio(video_url: str, audio_url: str, request: Request, output_path: str, headers: dict) -> bool:
     """
