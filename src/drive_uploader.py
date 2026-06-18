@@ -118,11 +118,17 @@ class DriveUploader:
             
             media = MediaFileUpload(local_path, chunksize=256*1024, resumable=True)
             
+            from datetime import datetime, timezone
+            now_rfc3339 = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
             if existing_files:
-                # Atualiza o arquivo mais recente
+                # Atualiza o arquivo mais recente e garante que a data de modificação reflita o momento do upload
                 file_id = existing_files[0]["id"]
                 logger.info(f"Atualizando arquivo existente no Drive: {drive_dest_path} (ID: {file_id})")
-                request = self.service.files().update(fileId=file_id, media_body=media)
+                body = {
+                    "modifiedTime": now_rfc3339
+                }
+                request = self.service.files().update(fileId=file_id, body=body, media_body=media)
                 
                 # Deleta duplicados históricos adicionais
                 for duplicate in existing_files[1:]:
@@ -132,10 +138,11 @@ class DriveUploader:
                     except Exception as ed:
                         logger.warning(f"Erro ao remover arquivo duplicado antigo: {ed}")
             else:
-                # Cria um novo arquivo
+                # Cria um novo arquivo com a data de modificação marcada para agora
                 body = {
                     "name": filename,
-                    "parents": [parent_id]
+                    "parents": [parent_id],
+                    "modifiedTime": now_rfc3339
                 }
                 request = self.service.files().create(body=body, media_body=media, fields="id")
             
