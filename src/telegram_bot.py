@@ -471,9 +471,14 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             # Salva no banco de dados com validade de 30 minutos
             database.create_web_session(session_token, duration_minutes=30)
             
+            # Garante que a URL base termina com barra antes de concatenar o token de sessão, evitando redirecionamento 301 do Nginx que remove os argumentos
+            base_url = WEB_PANEL_URL
+            if not base_url.endswith("/"):
+                base_url += "/"
+                
             # Monta a URL com o token
-            separator = "&" if "?" in WEB_PANEL_URL else "?"
-            session_url = f"{WEB_PANEL_URL}{separator}session={session_token}"
+            separator = "&" if "?" in base_url else "?"
+            session_url = f"{base_url}{separator}session={session_token}"
             
             text = (
                 "🌐 **Painel de Triagem Web**\n\n"

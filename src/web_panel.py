@@ -627,6 +627,7 @@ async def index(
     if session:
         if database.validate_web_session(session):
             # Sessão válida! Define o cookie e redireciona para a rota limpa
+            cookie_path = ROOT_PATH if ROOT_PATH else "/"
             redirect_url = f"{ROOT_PATH}/?tab={tab}&type={type}"
             redir_resp = RedirectResponse(url=redirect_url, status_code=303)
             redir_resp.set_cookie(
@@ -635,7 +636,8 @@ async def index(
                 max_age=1800, # 30 min
                 httponly=True,
                 samesite="lax",
-                secure=False
+                secure=False,
+                path=cookie_path
             )
             return redir_resp
         else:
