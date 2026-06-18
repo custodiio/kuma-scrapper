@@ -901,8 +901,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Painel", callback_data=f"submenu:{category}:{content_type}")]]
             if success:
-                ref_msg = f" (Referência inicial: `{last_ref}`)" if last_ref else " (Sem referência inicial)"
+                if last_ref:
+                    ref_msg = f"\n\n*(Referência inicial: `{last_ref}`)*"
+                else:
+                    ref_msg = "\n\n*(Sem referência inicial. O sistema tentará buscá-la de forma automática na inicialização ou no próximo mapeamento.)*"
                 await update.message.reply_text(f"✅ Canal **{name}** (UID: {uid}) adicionado!{ref_msg}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
             else:
                 await update.message.reply_text("❌ Erro ao salvar o canal no banco de dados.", reply_markup=InlineKeyboardMarkup(keyboard))
         else:

@@ -429,8 +429,9 @@ async def api_add_channel(uid: str = Form(...), name: str = Form(...), content_t
     
     success = database.add_channel(uid, name, category="all", content_type=content_type, last_video_ref=last_ref)
     if success:
-        ref_info = f"Vídeo de referência inicial: {last_ref}" if last_ref else "Sem postagem recente como referência inicial."
+        ref_info = f"Vídeo de referência inicial: {last_ref}" if last_ref else "Sem postagem recente como referência inicial (será buscada automaticamente no próximo mapeamento)."
         return {"ok": True, "message": f"Canal '{name}' cadastrado! {ref_info}"}
+
     else:
         raise HTTPException(status_code=500, detail="Erro ao salvar o canal no banco de dados.")
 
@@ -707,6 +708,7 @@ async def index(
     response: Response,
     tab: str = "search",
     type: str = "anime",
+    duration: str = "all", # 'all', 'shorts', 'longos'
     session: str = Query(None)
 ):
     """Renderiza o Painel de Triagem Web unificado de 5 abas com validação de sessão."""
@@ -714,13 +716,15 @@ async def index(
         type = "anime"
     if tab not in ["search", "updates", "cart", "channels", "terms"]:
         tab = "search"
+    if duration not in ["all", "shorts", "longos"]:
+        duration = "all"
         
     # 1. Verifica se foi passado token na query (login inicial a partir do Bot)
     if session:
         if database.validate_web_session(session):
             # Sessão válida! Define o cookie e redireciona para a rota limpa
             cookie_path = ROOT_PATH if ROOT_PATH else "/"
-            redirect_url = f"{ROOT_PATH}/?tab={tab}&type={type}"
+            redirect_url = f"{ROOT_PATH}/?tab={tab}&type={type}&duration={duration}"
             redir_resp = RedirectResponse(url=redirect_url, status_code=303)
             redir_resp.set_cookie(
                 key="scrapper_session",
@@ -751,6 +755,12 @@ async def index(
         results = database.get_search_results(status="pending", content_type=type)
         processing = database.get_search_results(status="processing", content_type=type)
         all_items = processing + results
+        
+        # Filtro de duração
+        if duration == "shorts":
+            all_items = [r for r in all_items if r["duration_seconds"] < 240]
+        elif duration == "longos":
+            all_items = [r for r in all_items if r["duration_seconds"] >= 240]
         
         cards_html = ""
         for r in all_items:
@@ -806,6 +816,12 @@ async def index(
         results = database.get_channel_updates(status="pending", content_type=type)
         processing = database.get_channel_updates(status="processing", content_type=type)
         all_items = processing + results
+        
+        # Filtro de duração
+        if duration == "shorts":
+            all_items = [r for r in all_items if r["duration_seconds"] < 240]
+        elif duration == "longos":
+            all_items = [r for r in all_items if r["duration_seconds"] >= 240]
         
         cards_html = ""
         for r in all_items:
@@ -867,6 +883,12 @@ async def index(
         """, (type,))
         cart_items = [dict(row) for row in cursor.fetchall()]
         conn.close()
+        
+        # Filtro de duração
+        if duration == "shorts":
+            cart_items = [r for r in cart_items if r["category"] == "shorts"]
+        elif duration == "longos":
+            cart_items = [r for r in cart_items if r["category"] == "longos"]
         
         cards_html = ""
         for r in cart_items:
@@ -1021,10 +1043,30 @@ async def index(
     tab_channels_active = "active" if tab == "channels" else ""
     tab_terms_active = "active" if tab == "terms" else ""
     
-    sublink_anime = f"{ROOT_PATH}/?tab={tab}&type=anime"
-    sublink_manhwa = f"{ROOT_PATH}/?tab={tab}&type=manhwa"
+    sublink_anime = f"{ROOT_PATH}/?tab={tab}&type=anime&duration={duration}"
+    sublink_manhwa = f"{ROOT_PATH}/?tab={tab}&type=manhwa&duration={duration}"
     tab_anime_active = "active" if type == "anime" else ""
     tab_manhwa_active = "active" if type == "manhwa" else ""
+    
+    # Sublinks de Filtro de Duração
+    sublink_dur_all = f"{ROOT_PATH}/?tab={tab}&type={type}&duration=all"
+    sublink_dur_shorts = f"{ROOT_PATH}/?tab={tab}&type={type}&duration=shorts"
+    sublink_dur_longos = f"{ROOT_PATH}/?tab={tab}&type={type}&duration=longos"
+    dur_all_active = "active" if duration == "all" else ""
+    dur_shorts_active = "active" if duration == "shorts" else ""
+    dur_longos_active = "active" if duration == "longos" else ""
+    
+    duration_filter_html = ""
+    if tab in ["search", "updates", "cart"]:
+        duration_filter_html = f"""
+        <div style="display:flex; gap:12px; align-items:center;">
+            <span style="font-size:0.85rem; color:#888; font-weight:600;">Duração:</span>
+            <a href="{sublink_dur_all}" class="context-link {dur_all_active}">📁 Tudo</a>
+            <a href="{sublink_dur_shorts}" class="context-link {dur_shorts_active}">📱 Shorts</a>
+            <a href="{sublink_dur_longos}" class="context-link {dur_longos_active}">🎬 Longos</a>
+        </div>
+        <div style="width: 1px; height: 20px; background: rgba(255,255,255,0.1); margin: 0 10px;"></div>
+        """
 
     html_content = f"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -1527,16 +1569,20 @@ async def index(
     
     <main>
         <div class="context-row">
-            <a href="{sublink_anime}" class="context-link {tab_anime_active}">🌸 Anime</a>
-            <a href="{sublink_manhwa}" class="context-link {tab_manhwa_active}">🇰🇷 Manhwa</a>
+            {duration_filter_html}
+            <div style="display:flex; gap:12px; align-items:center;">
+                <span style="font-size:0.85rem; color:#888; font-weight:600;">Tipo:</span>
+                <a href="{sublink_anime}" class="context-link {tab_anime_active}">🌸 Anime</a>
+                <a href="{sublink_manhwa}" class="context-link {tab_manhwa_active}">🇰🇷 Manhwa</a>
+            </div>
         </div>
 
         <div class="tabs-row">
-            <a href="{ROOT_PATH}/?tab=search&type={type}" class="tab-link {tab_search_active}">🔍 Busca Geral</a>
-            <a href="{ROOT_PATH}/?tab=updates&type={type}" class="tab-link {tab_updates_active}">🔔 Atualizações Canais</a>
-            <a href="{ROOT_PATH}/?tab=cart&type={type}" class="tab-link {tab_cart_active}">🛒 Carrinho / Fila</a>
-            <a href="{ROOT_PATH}/?tab=channels&type={type}" class="tab-link {tab_channels_active}">👥 Gerenciar Canais</a>
-            <a href="{ROOT_PATH}/?tab=terms&type={type}" class="tab-link {tab_terms_active}">🔑 Termos de Busca</a>
+            <a href="{ROOT_PATH}/?tab=search&type={type}&duration={duration}" class="tab-link {tab_search_active}">🔍 Busca Geral</a>
+            <a href="{ROOT_PATH}/?tab=updates&type={type}&duration={duration}" class="tab-link {tab_updates_active}">🔔 Atualizações Canais</a>
+            <a href="{ROOT_PATH}/?tab=cart&type={type}&duration={duration}" class="tab-link {tab_cart_active}">🛒 Carrinho / Fila</a>
+            <a href="{ROOT_PATH}/?tab=channels&type={type}&duration={duration}" class="tab-link {tab_channels_active}">👥 Gerenciar Canais</a>
+            <a href="{ROOT_PATH}/?tab=terms&type={type}&duration={duration}" class="tab-link {tab_terms_active}">🔑 Termos de Busca</a>
         </div>
         
         <div id="main-content">

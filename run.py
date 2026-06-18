@@ -64,7 +64,16 @@ def main():
         print("Sincronizando cookies com a API local...")
         sync_cookie.sync()
     except Exception as e:
-        print(f"⚠️ Alerta: Falha ao executar sincronização de cookies: {e}")
+        print(f"Alerta: Falha ao executar sincronização de cookies: {e}")
+
+    # Preenche referências nulas de canais cadastrados
+    try:
+        import asyncio
+        print("Verificando se ha canais cadastrados sem video de referencia...")
+        asyncio.run(search_scrapper.populate_missing_channel_references())
+    except Exception as e:
+        print(f"Alerta: Falha ao preencher referencias de canais: {e}")
+
 
     # 1. Inicia o Painel Web em uma thread daemon
     print("Iniciando Painel Web (FastAPI/Uvicorn na porta 5556)...")

@@ -351,3 +351,36 @@ async def track_channels_updates(content_type: str) -> int:
     logger.info(f"Varredura de canais finalizada para {content_type}. Total de novas postagens: {total_new_updates}")
     return total_new_updates
 
+
+async def populate_missing_channel_references() -> int:
+    """Busca e define o vídeo de referência para todos os canais que estão com a coluna nula ou vazia."""
+    logger.info("Iniciando verificação de canais sem vídeo de referência...")
+    channels = database.get_channels()
+    updated_count = 0
+    
+    channels_to_update = [c for c in channels if not c.get("last_video_ref")]
+    if not channels_to_update:
+        logger.info("Todos os canais cadastrados já possuem vídeo de referência.")
+        return 0
+        
+    logger.info(f"Encontrados {len(channels_to_update)} canais sem referência de vídeo inicial.")
+    for ch in channels_to_update:
+        uid = ch["uid"]
+        name = ch["name"]
+        try:
+            logger.info(f"Buscando vídeo de referência para canal: {name} (UID: {uid})")
+            latest_video = await get_latest_video_for_channel(uid)
+            if latest_video and latest_video.get("bvid"):
+                new_ref = latest_video["bvid"]
+                database.update_channel_ref(uid, new_ref)
+                logger.info(f"Canal '{name}' atualizado com a referência: {new_ref}")
+                updated_count += 1
+            else:
+                logger.warning(f"Não foi possível obter o último vídeo para o canal '{name}' (UID: {uid}). A API pode estar indisponível ou o UID é inválido.")
+        except Exception as e:
+            logger.error(f"Erro ao preencher referência para o canal '{name}' (UID: {uid}): {e}")
+            
+    logger.info(f"Preenchimento de referências concluído. {updated_count} canais atualizados.")
+    return updated_count
+
+
