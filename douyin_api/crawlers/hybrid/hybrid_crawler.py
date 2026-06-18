@@ -177,8 +177,9 @@ class HybridCrawler:
                 uri = data['video']['play_addr']['uri']
                 wm_video_url_HQ = data['video']['play_addr']['url_list'][0]
                 wm_video_url = f"https://aweme.snssdk.com/aweme/v1/playwm/?video_id={uri}&radio=1080p&line=0"
-                nwm_video_url_HQ = wm_video_url_HQ.replace('playwm', 'play')
                 nwm_video_url = f"https://aweme.snssdk.com/aweme/v1/play/?video_id={uri}&ratio=1080p&line=0"
+                # Força a versão sem marca d'água de alta qualidade a usar a URL de 1080p cravada
+                nwm_video_url_HQ = nwm_video_url
                 api_data = {
                     'video_data':
                         {
@@ -264,8 +265,8 @@ class HybridCrawler:
                 # 获取视频播放地址需要额外调用API
                 cid = data.get('cid')  # 获取cid
                 if cid:
-                    # 获取播放链接，cid需要转换为字符串
-                    playurl_data = await self.BilibiliWebCrawler.fetch_video_playurl(aweme_id, str(cid))
+                    # 获取播放链接，cid需要转换为字符串，qn="80" (1080P)
+                    playurl_data = await self.BilibiliWebCrawler.fetch_video_playurl(aweme_id, str(cid), qn="80")
                     # 从播放数据中提取URL
                     dash = playurl_data.get('data', {}).get('dash', {})
                     video_list = dash.get('video', [])

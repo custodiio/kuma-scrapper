@@ -86,7 +86,7 @@ class BilibiliWebCrawler:
         return response
 
     # 获取视频流地址
-    async def fetch_video_playurl(self, bv_id: str, cid: str, qn: str = "64") -> dict:
+    async def fetch_video_playurl(self, bv_id: str, cid: str, qn: str = "80") -> dict:
         # 获取请求头信息
         kwargs = await self.get_bilibili_headers()
         # 创建基础爬虫对象
