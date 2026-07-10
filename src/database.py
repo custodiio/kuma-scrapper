@@ -415,6 +415,30 @@ def clear_old_search_results(days=14):
     finally:
         conn.close()
 
+def delete_absent_search_results(active_bvids, content_type="anime"):
+    """Remove resultados de busca pendentes que não estão na lista de bvids coletados."""
+    if not active_bvids:
+        return 0
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        placeholders = ",".join("?" for _ in active_bvids)
+        query = f"""
+            DELETE FROM search_results 
+            WHERE status = 'pending' 
+              AND content_type = ? 
+              AND bvid NOT IN ({placeholders})
+        """
+        cursor.execute(query, [content_type] + active_bvids)
+        deleted = cursor.rowcount
+        conn.commit()
+        return deleted
+    except Exception as e:
+        print(f"Erro ao remover resultados de busca ausentes: {e}")
+        return 0
+    finally:
+        conn.close()
+
 def clean_database():
     """Limpa todo o histórico, canais, buscas, atualizações de canais e sessões web."""
     conn = get_connection()

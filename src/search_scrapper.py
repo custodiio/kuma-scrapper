@@ -122,13 +122,13 @@ async def fetch_bilibili_search_videos(keyword: str, max_pages: int = 3) -> list
                 
     return results
 
-async def run_single_scraping(keyword: str, content_type: str) -> int:
+async def run_single_scraping(keyword: str, content_type: str) -> tuple[int, list[str]]:
     """Roda a busca para um termo e tipo de conteúdo específicos e grava no banco."""
     logger.info(f"Executando busca no Bilibili por '{keyword}' ({content_type})...")
     raw_videos = await fetch_bilibili_search_videos(keyword, max_pages=3)
     if not raw_videos:
         logger.warning(f"Nenhum resultado obtido na busca por '{keyword}' ({content_type}).")
-        return 0
+        return 0, []
         
     filtered_videos = []
     now_ts = time.time()
@@ -148,7 +148,10 @@ async def run_single_scraping(keyword: str, content_type: str) -> int:
     
     inserted = database.add_search_results(filtered_videos, content_type=content_type)
     logger.info(f"Triagem atualizada para '{content_type}': {inserted} novos vídeos adicionados.")
-    return inserted
+    
+    # Coleta todos os bvids encontrados nesta busca
+    bvids_found = [v["bvid"] for v in filtered_videos]
+    return inserted, bvids_found
 
 async def run_search_scraping():
     """
@@ -169,18 +172,34 @@ async def run_search_scraping():
         manhwa_terms = [{"term": "韩漫解说"}]
         
     inserted_anime = 0
+    active_anime_bvids = []
     for item in anime_terms:
         try:
-            inserted_anime += await run_single_scraping(item["term"], "anime")
+            inserted, bvids = await run_single_scraping(item["term"], "anime")
+            inserted_anime += inserted
+            active_anime_bvids.extend(bvids)
         except Exception as e:
             logger.error(f"Erro ao buscar termo '{item['term']}' (anime): {e}")
         
+    # Limpeza de vídeos de anime ausentes na busca atual
+    if active_anime_bvids:
+        deleted = database.delete_absent_search_results(active_anime_bvids, "anime")
+        logger.info(f"Limpeza de triagem anime: {deleted} vídeos ausentes removidos de pendentes.")
+
     inserted_manhwa = 0
+    active_manhwa_bvids = []
     for item in manhwa_terms:
         try:
-            inserted_manhwa += await run_single_scraping(item["term"], "manhwa")
+            inserted, bvids = await run_single_scraping(item["term"], "manhwa")
+            inserted_manhwa += inserted
+            active_manhwa_bvids.extend(bvids)
         except Exception as e:
             logger.error(f"Erro ao buscar termo '{item['term']}' (manhwa): {e}")
+            
+    # Limpeza de vídeos de manhwa ausentes na busca atual
+    if active_manhwa_bvids:
+        deleted = database.delete_absent_search_results(active_manhwa_bvids, "manhwa")
+        logger.info(f"Limpeza de triagem manhwa: {deleted} vídeos ausentes removidos de pendentes.")
         
     total_inserted = inserted_anime + inserted_manhwa
     logger.info(f"Busca geral concluída. Total de novos vídeos inseridos: {total_inserted}")

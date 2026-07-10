@@ -11,6 +11,23 @@ from src.config import DOUYIN_API_BASE
 
 logger = logging.getLogger(__name__)
 
+from datetime import datetime
+
+def format_date(date_str: str) -> str:
+    """Formata data YYYY-MM-DD HH:MM:SS para DD/MM/YYYY HH:MM."""
+    if not date_str:
+        return "N/A"
+    try:
+        dt = datetime.strptime(date_str.split(".")[0], "%Y-%m-%d %H:%M:%S")
+        return dt.strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        try:
+            dt = datetime.strptime(date_str.split("T")[0], "%Y-%m-%d")
+            return dt.strftime("%d/%m/%Y")
+        except Exception:
+            return date_str
+
+
 ROOT_PATH = os.getenv("ROOT_PATH", "")
 app = FastAPI(title="Kuma Scrapper - Painel de Triagem Web", root_path=ROOT_PATH)
 
@@ -788,6 +805,9 @@ async def index(
                     <div class="card-meta">
                         <span>👁️ {r['views']:,}</span>
                         <span>👍 {r['likes']:,}</span>
+                    </div>
+                    <div class="card-meta" style="margin-top:-6px; margin-bottom:12px;">
+                        <span>📅 {format_date(r['published_at'])}</span>
                         <span class="score-badge">🔥 Hype: {r['hype_score']:,}</span>
                     </div>
                     <div class="card-status-row">
@@ -849,6 +869,9 @@ async def index(
                     <div class="card-meta">
                         <span>👁️ {r['views']:,}</span>
                         <span>💬 Proxy Hype: {r['likes']:,}</span>
+                    </div>
+                    <div class="card-meta" style="margin-top:-6px; margin-bottom:12px;">
+                        <span>📅 {format_date(r['published_at'])}</span>
                     </div>
                     <div class="card-status-row">
                         {badge}
@@ -918,6 +941,9 @@ async def index(
                     <span class="category-indicator">{category_badge}</span>
                     <h3 class="card-title" style="height: auto; max-height: 2.8rem; margin-top: 8px;" title="{r['title']}">{r['title']}</h3>
                     <p class="card-author" style="margin-top: 4px; margin-bottom: 12px;">👤 {channel_info} | ID: `{r['bvid']}`</p>
+                    <div class="card-meta" style="margin-top:-8px; margin-bottom:12px;">
+                        <span>📅 Postado em: {format_date(r['published_at'])}</span>
+                    </div>
                     <div class="card-status-row" style="margin-bottom: 16px;">
                         {badge}
                         <a href="https://www.bilibili.com/video/{r['bvid']}" target="_blank" class="link-watch">🔗 Link Bilibili</a>
