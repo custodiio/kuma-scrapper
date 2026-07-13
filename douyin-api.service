@@ -4,9 +4,9 @@ After=network.target
 
 [Service]
 Type=simple
-User=mariadelurdesalvesdoprado
-WorkingDirectory=/home/mariadelurdesalvesdoprado/apps/kuma-scrapper/douyin_api
-ExecStart=/home/mariadelurdesalvesdoprado/apps/kuma-scrapper/.venv/bin/python start.py
+User=ubuntu
+WorkingDirectory=/app/scrapper_douyin/douyin_api
+ExecStart=/app/scrapper_douyin/.venv/bin/python start.py
 Restart=always
 RestartSec=5
 
