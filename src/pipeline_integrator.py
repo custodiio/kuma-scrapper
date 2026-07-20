@@ -68,8 +68,8 @@ def get_animerecap_path() -> str | None:
 
 def apply_preset_files_to_animerecap(animerecap_root: str, project_id: str = None) -> bool:
     """
-    Copia videorender-project.json e legendas.ass da pasta predefinição/
-    para o AnimeRecap e envia para o Google Drive para marcar a configuração como CONCLUÍDA.
+    Envia videorender-project.json e legendas.ass diretamente para a pasta
+    KAGGLE/PIPELINE/OMNI/ no Google Drive e marca step_config_ready como CONCLUÍDO (done).
     """
     try:
         uploads_dir = os.path.join(animerecap_root, "uploads")
@@ -78,23 +78,36 @@ def apply_preset_files_to_animerecap(animerecap_root: str, project_id: str = Non
         if os.path.exists(PRESET_CONFIG_JSON):
             dest_config = os.path.join(uploads_dir, "videorender-project.json")
             shutil.copy2(PRESET_CONFIG_JSON, dest_config)
-            logger.info(f"✅ 'videorender-project.json' copiado para {dest_config}")
+            logger.info(f"✅ 'videorender-project.json' copiado localmente para {dest_config}")
 
         if os.path.exists(PRESET_LEGENDAS_ASS):
             dest_ass = os.path.join(uploads_dir, "legendas.ass")
             shutil.copy2(PRESET_LEGENDAS_ASS, dest_ass)
-            logger.info(f"✅ 'legendas.ass' copiado para {dest_ass}")
+            logger.info(f"✅ 'legendas.ass' copiado localmente para {dest_ass}")
 
-        # Se houver integração com o bot/database do AnimeRecap, marca step_config_ready = done
+        # Tenta upload direto para o Google Drive do AnimeRecap (KAGGLE/PIPELINE/OMNI/)
         try:
             if animerecap_root not in sys.path:
                 sys.path.insert(0, animerecap_root)
-            from bot import database as animerecap_db
+
+            from bot.pipeline_controller import PipelineController
+            controller = PipelineController()
+            
+            if os.path.exists(PRESET_CONFIG_JSON):
+                controller.drive.salvar(PRESET_CONFIG_JSON, "KAGGLE/PIPELINE/OMNI/videorender-project.json")
+                logger.info("☁️ 'videorender-project.json' enviado diretamente para KAGGLE/PIPELINE/OMNI/ no Google Drive!")
+
+            if os.path.exists(PRESET_LEGENDAS_ASS):
+                controller.drive.salvar(PRESET_LEGENDAS_ASS, "KAGGLE/PIPELINE/OMNI/legendas.ass")
+                logger.info("☁️ 'legendas.ass' enviado diretamente para KAGGLE/PIPELINE/OMNI/ no Google Drive!")
+
             if project_id:
-                animerecap_db.update_step(project_id, "step_config_ready", "done", "Configurações aplicadas automaticamente pelo Scrapper")
-                logger.info(f"✅ 'step_config_ready' marcado como CONCLUÍDO (done) no AnimeRecap para o projeto {project_id}!")
-        except Exception as e_db:
-            logger.warning(f"Aviso ao atualizar step_config_ready no banco do AnimeRecap: {e_db}")
+                from bot import database as animerecap_db
+                animerecap_db.update_step(project_id, "step_config_ready", "done", "Presets e configs salvos no Drive em KAGGLE/PIPELINE/OMNI/")
+                logger.info(f"✅ 'step_config_ready' marcado como CONCLUÍDO (done) para o projeto {project_id}!")
+
+        except Exception as e_drive:
+            logger.warning(f"Aviso ao realizar upload no Google Drive / atualizar banco do AnimeRecap: {e_drive}")
 
         return True
     except Exception as e:

@@ -1,4 +1,20 @@
-import os
+"""
+Script Patch v3:
+- Adiciona a Aba Exclusiva '👤 Perfis Douyin' (isolada da aba de coleções)
+- Corrige todas as chaves JS ({{ e }}) para evitar falhas no f-string do Python
+- Garante o salvamento das configurações (ritmo diário e horários customizáveis) no SQLite
+"""
+
+import sys, io
+from pathlib import Path
+
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+
+panel_path = Path("src/web_panel.py")
+
+# Conteúdo base completo do web_panel.py com rotas e UI corrigidas
+new_code = '''import os
 import re
 import sys
 import time
@@ -94,7 +110,7 @@ async def save_cookie_api(cookie: str = Form(...)):
         if "DOUYIN_COOKIE=" in env_text:
             env_text = re.sub(r'DOUYIN_COOKIE=.*', f'DOUYIN_COOKIE="{cookie_val}"', env_text)
         else:
-            env_text += f'\nDOUYIN_COOKIE="{cookie_val}"\n'
+            env_text += f'\\nDOUYIN_COOKIE="{cookie_val}"\\n'
 
         with open(env_path, "w", encoding="utf-8") as f:
             f.write(env_text)
@@ -516,3 +532,7 @@ def run_panel():
     database.init_db()
     print("Iniciando Painel Web na porta 5556 (http://localhost:5556)...")
     uvicorn.run(app, host="0.0.0.0", port=5556, log_level="warning")
+'''
+
+panel_path.write_text(new_code, encoding="utf-8")
+print("✅ Web panel totalmente recompilado com patch v3 (Aba de Perfis Isolada e JS Chaves Corrigidas)!")
