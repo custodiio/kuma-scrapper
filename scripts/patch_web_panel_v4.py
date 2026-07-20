@@ -1,4 +1,18 @@
-import os
+"""
+Script Patch v4:
+- Adiciona o Modal #seriesModal para abrir coleções em 1-clique
+- Suporte a tradução automática e rotas com/sem prefixo /scrapper
+"""
+
+import sys, io
+from pathlib import Path
+
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+
+panel_path = Path("src/web_panel.py")
+
+new_code = '''import os
 import re
 import sys
 import time
@@ -105,7 +119,7 @@ async def save_cookie_api(cookie: str = Form(...)):
         if "DOUYIN_COOKIE=" in env_text:
             env_text = re.sub(r'DOUYIN_COOKIE=.*', f'DOUYIN_COOKIE="{cookie_val}"', env_text)
         else:
-            env_text += f'\nDOUYIN_COOKIE="{cookie_val}"\n'
+            env_text += f'\\nDOUYIN_COOKIE="{cookie_val}"\\n'
 
         with open(env_path, "w", encoding="utf-8") as f:
             f.write(env_text)
@@ -478,14 +492,14 @@ def get_full_html_page(tab, type, duration, header_action_button, content_html,
                     const autopostBtnStyle = c.autoposting ? 'background:#2e7d32;' : 'background:#c62828;';
 
                     document.getElementById('modalHeroContent').innerHTML =
-                        '<img src="' + c.cover_url + '" style="width:120px; height:160px; object-fit:cover; border-radius:10px; border:1px solid #333;" onerror="this.src=\'https://raw.githubusercontent.com/Evil0ctal/Douyin_TikTok_Download_API/main/logo/logo192.png\'">' +
+                        '<img src="' + c.cover_url + '" style="width:120px; height:160px; object-fit:cover; border-radius:10px; border:1px solid #333;" onerror="this.src=\\'https://raw.githubusercontent.com/Evil0ctal/Douyin_TikTok_Download_API/main/logo/logo192.png\\'">' +
                         '<div style="flex:1;">' +
                             '<h2 style="margin:0 0 6px 0; font-size:1.5rem; color:#fff;">' + c.title_pt + '</h2>' +
                             '<p style="color:#aaa; margin:0 0 12px 0; font-size:0.88rem;">' + (c.title_zh || '') + ' • 👤 Autor: ' + c.author + '</p>' +
                             '<p style="color:#ccc; font-size:0.85rem; margin-bottom:16px;">📊 Total EPs: <strong>' + eps.length + '</strong> | Postados: <strong>' + (c.posted_count || 0) + '</strong></p>' +
                             '<div style="display:flex; gap:10px; flex-wrap:wrap;">' +
-                                '<button class="btn-sync" style="' + autopostBtnStyle + ' border:none; padding:8px 16px; cursor:pointer;" onclick="toggleAutoposting(\'"' + c.mix_id + '\'")">' + autopostBtnLabel + '</button>' +
-                                '<button class="btn-sync" style="background:#b81d24; border:none; padding:8px 16px; cursor:pointer;" onclick="deleteCollection(\'"' + c.mix_id + '\'")">🗑️ Excluir Coleção</button>' +
+                                '<button class="btn-sync" style="' + autopostBtnStyle + ' border:none; padding:8px 16px; cursor:pointer;" onclick="toggleAutoposting(\\'"' + c.mix_id + '\\'")">' + autopostBtnLabel + '</button>' +
+                                '<button class="btn-sync" style="background:#b81d24; border:none; padding:8px 16px; cursor:pointer;" onclick="deleteCollection(\\'"' + c.mix_id + '\\'")">🗑️ Excluir Coleção</button>' +
                             '</div>' +
                         '</div>';
 
@@ -505,18 +519,18 @@ def get_full_html_page(tab, type, duration, header_action_button, content_html,
                         let actionsHtml = '';
                         if (isOpaque) {{
                             actionsHtml =
-                                '<button class="btn-ep btn-accel" onclick="applyEpAction(' + ep.id + ', \'accelerate\')">⚡ Acelerar</button>' +
-                                '<button class="btn-ep btn-split" onclick="applyEpAction(' + ep.id + ', \'split\')">✂️ Dividir</button>' +
-                                '<button class="btn-ep btn-ignore" onclick="applyEpAction(' + ep.id + ', \'ignore\')">🗑️ Descartar</button>';
+                                '<button class="btn-ep btn-accel" onclick="applyEpAction(' + ep.id + ', \\\'accelerate\\\')">⚡ Acelerar</button>' +
+                                '<button class="btn-ep btn-split" onclick="applyEpAction(' + ep.id + ', \\\'split\\\')">✂️ Dividir</button>' +
+                                '<button class="btn-ep btn-ignore" onclick="applyEpAction(' + ep.id + ', \\\'ignore\\\')">🗑️ Descartar</button>';
                         }} else if (ep.status === 'pending') {{
                             actionsHtml =
-                                '<button class="btn-ep btn-post-now" onclick="applyEpAction(' + ep.id + ', \'post_now\')">⚡ Postar Agora</button>' +
-                                '<button class="btn-ep btn-next-queue" onclick="applyEpAction(' + ep.id + ', \'next_in_queue\')">🔝 Próximo Fila</button>';
+                                '<button class="btn-ep btn-post-now" onclick="applyEpAction(' + ep.id + ', \\\'post_now\\\')">⚡ Postar Agora</button>' +
+                                '<button class="btn-ep btn-next-queue" onclick="applyEpAction(' + ep.id + ', \\\'next_in_queue\\\')">🔝 Próximo Fila</button>';
                         }}
 
                         epsHtml +=
                             '<div class="ep-row" style="background:#161922; border:1px solid #232736; border-radius:8px; padding:10px; display:flex; align-items:center; gap:12px;">' +
-                                '<img src="' + ep.cover_url + '" style="width:60px; height:80px; object-fit:cover; border-radius:6px;" onerror="this.src=\'https://raw.githubusercontent.com/Evil0ctal/Douyin_TikTok_Download_API/main/logo/logo192.png\'">' +
+                                '<img src="' + ep.cover_url + '" style="width:60px; height:80px; object-fit:cover; border-radius:6px;" onerror="this.src=\\'https://raw.githubusercontent.com/Evil0ctal/Douyin_TikTok_Download_API/main/logo/logo192.png\\'">' +
                                 '<div style="flex:1;">' +
                                     '<div style="font-weight:bold; font-size:0.92rem; color:#fff; margin-bottom:4px;">EP ' + (ep.episode_num || idx + 1) + ': ' + ep.title + '</div>' +
                                     '<div style="font-size:0.8rem; color:#aaa;">⏱️ ' + durStr + ' | ❤️ ' + ep.likes + ' | Status: ' + statusBadge + '</div>' +
@@ -625,3 +639,7 @@ def run_panel():
     database.init_db()
     print("Iniciando Painel Web na porta 5556 (http://localhost:5556)...")
     uvicorn.run(app, host="0.0.0.0", port=5556, log_level="warning")
+'''
+
+panel_path.write_text(new_code, encoding="utf-8")
+print("✅ Web panel v4 atualizado com #seriesModal, tradução e 1-clique!")

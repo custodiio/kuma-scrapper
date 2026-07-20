@@ -87,10 +87,12 @@ def fetch_and_store_profile(user_input: str) -> dict:
                         cover = cover_list[0]
 
                     duration_s = video.get("duration", 0) // 1000  # ms -> s
+                    from src.translator import translate_zh_to_pt
+                    title_pt = translate_zh_to_pt(desc)
 
                     all_videos.append({
                         "aweme_id": aid,
-                        "title": desc,
+                        "title": title_pt if title_pt else desc,
                         "duration_seconds": duration_s,
                         "likes": stats.get("digg_count", 0),
                         "comments": stats.get("comment_count", 0),

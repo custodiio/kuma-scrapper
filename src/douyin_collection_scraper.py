@@ -13,6 +13,7 @@ from datetime import datetime
 from src import database
 from src.config import DOUYIN_API_BASE
 from src.episode_detector import extract_episode
+from src.translator import translate_zh_to_pt
 
 logger = logging.getLogger(__name__)
 
@@ -132,12 +133,13 @@ def fetch_and_store_collection(user_input: str, title_pt: str = None, autopostin
 
                     duration_s = video.get("duration", 0) // 1000  # ms -> s
                     ep_num = mix_info.get("st_at") or extract_episode(desc)
+                    title_translated = translate_zh_to_pt(desc)
 
                     all_episodes.append({
                         "mix_id": mix_id,
                         "episode_num": ep_num,
                         "aweme_id": aid,
-                        "title": desc,
+                        "title": title_translated if title_translated else desc,
                         "duration_seconds": duration_s,
                         "likes": stats.get("digg_count", 0),
                         "comments": stats.get("comment_count", 0),
