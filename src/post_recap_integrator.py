@@ -20,10 +20,11 @@ def get_post_recap_path() -> str | None:
     possible_paths = [
         r"D:\Applications\Post_recap",
         r"C:\Applications\Post_recap",
+        "/home/ubuntu/apps/Post_recap",
         os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "Post_recap"))
     ]
     for p in possible_paths:
-        if os.path.exists(p) and os.path.exists(os.path.join(p, "bot.py")):
+        if os.path.exists(p):
             return p
     return None
 
