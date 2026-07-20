@@ -165,13 +165,28 @@ def dispatch_episode_to_pipeline(ep_id: int, custom_presets: dict = None) -> dic
             sys.path.insert(0, animerecap_root)
 
         project_name = f"Recap_Col_{ep['mix_id']}_EP{ep['episode_num'] or 1}"
+        real_project_id = None
         
         # Salva preferências globais no AnimeRecap
-        from bot.telegram_bot import save_user_preferences
-        save_user_preferences("default_scrapper", presets)
+        try:
+            import json as json_mod
+            from bot.telegram_bot import save_user_preferences
+            save_user_preferences("default_scrapper", presets)
+        except Exception as e_pref:
+            logger.warning(f"Aviso ao salvar preferências no AnimeRecap: {e_pref}")
 
-        # Copia videorender-project.json e legendas.ass da pasta predefinição/
-        apply_preset_files_to_animerecap(animerecap_root, project_id=project_name)
+        # Tenta registrar o projeto no PostgreSQL do AnimeRecap para obter seu UUID
+        try:
+            from bot import database as animerecap_db
+            db_pid = animerecap_db.create_project(name=project_name)
+            if db_pid:
+                real_project_id = str(db_pid)
+                logger.info(f"✅ Projeto criado no PostgreSQL do AnimeRecap com UUID: {real_project_id}")
+        except Exception as e_create:
+            logger.warning(f"Aviso ao criar projeto no PostgreSQL: {e_create}")
+
+        # Envia os arquivos de predefinição (Drive + local) e marca step_config_ready = done
+        apply_preset_files_to_animerecap(animerecap_root, project_id=real_project_id or project_name)
 
         logger.info(f"✅ Projeto AnimeRecap '{project_name}' registrado e configurado automaticamente!")
         database.update_episode_status(ep_id, "processing_dubbing")
