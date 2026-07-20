@@ -976,6 +976,69 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_main_menu_keyboard()
     )
 
+async def cookie_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando para atualizar o DOUYIN_COOKIE dinamicamente pelo Telegram."""
+    if not is_authorized(update):
+        return
+        
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "🍪 *Como usar o comando /cookie:*\n\n"
+            "Envie: `/cookie SEU_COOKIE_AQUI`\n\n"
+            "O robô salvará no `.env` e sincronizará automaticamente com a API local!",
+            parse_mode="Markdown"
+        )
+        return
+
+    cookie_val = " ".join(args).strip()
+    
+    from pathlib import Path
+    project_root = Path(__file__).resolve().parent.parent
+    env_path = project_root / ".env"
+    
+    try:
+        env_text = ""
+        if env_path.exists():
+            with open(env_path, "r", encoding="utf-8") as f:
+                env_text = f.read()
+
+        if "DOUYIN_COOKIE=" in env_text:
+            env_text = re.sub(r'DOUYIN_COOKIE=.*', f'DOUYIN_COOKIE="{cookie_val}"', env_text)
+        else:
+            env_text += f'\nDOUYIN_COOKIE="{cookie_val}"\n'
+
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write(env_text)
+
+        from scripts import sync_cookie
+        sync_cookie.sync()
+
+        await update.message.reply_text("✅ *Cookie do Douyin atualizado e sincronizado com sucesso!*", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro ao atualizar cookie: {e}")
+
+async def colecoes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando para listar coleções cadastradas e o status de autoposting."""
+    if not is_authorized(update):
+        return
+
+    cols = database.get_douyin_collections()
+    if not cols:
+        await update.message.reply_text("📚 Nenhuma coleção cadastrada no momento.")
+        return
+
+    msg = "📚 *Coleções Cadastradas (Douyin):*\n\n"
+    for c in cols[:10]:
+        autopost = "🟢 ON" if c.get("autoposting") else "🔴 OFF"
+        msg += f"🎬 *{c['title_pt']}* ({c['title_zh']})\n"
+        msg += f"   📊 Progresso: {c.get('posted_count', 0)} / {c.get('total_episodes_mapped', 0)} EPs\n"
+        msg += f"   ⚡ Autoposting: {autopost}\n"
+        msg += f"   🔗 ID: `{c['mix_id']}`\n\n"
+
+    msg += f"💡 _Total de {len(cols)} coleções ativas._"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
 # ----------------- INICIALIZAÇÃO DO BOT -----------------
 
 def run_bot():
@@ -990,8 +1053,11 @@ def run_bot():
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("cookie", cookie_command))
+    app.add_handler(CommandHandler("colecoes", colecoes_command))
     app.add_handler(CallbackQueryHandler(handle_callback_query))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     print("Iniciando Bot de Download do Douyin/Bilibili...")
     app.run_polling()
+

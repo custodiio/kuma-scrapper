@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import json
 from datetime import datetime, timedelta
 
 from src.config import HISTORY_DB_PATH
@@ -124,9 +125,71 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-        
+    
+    # Tabela de configurações do perfil/sistema
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("INSERT OR IGNORE INTO user_settings (key, value) VALUES ('daily_post_rate', '2')")
+    
+    # Tabela de Perfis Monitorados do Douyin
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS douyin_profiles (
+            sec_uid TEXT PRIMARY KEY,
+            nickname TEXT NOT NULL,
+            avatar_url TEXT,
+            profile_url TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Tabela de Coleções/Playlists do Douyin (Nativas ou Virtuais)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS douyin_collections (
+            mix_id TEXT PRIMARY KEY,
+            title_pt TEXT NOT NULL,
+            title_zh TEXT,
+            author TEXT,
+            cover_url TEXT,
+            total_episodes INTEGER DEFAULT 0,
+            autoposting INTEGER DEFAULT 1,
+            is_virtual INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Tabela de Episódios da Coleção
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS collection_episodes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mix_id TEXT NOT NULL,
+            episode_num INTEGER,
+            aweme_id TEXT UNIQUE NOT NULL,
+            title TEXT NOT NULL,
+            duration_seconds INTEGER DEFAULT 0,
+            likes INTEGER DEFAULT 0,
+            comments INTEGER DEFAULT 0,
+            cover_url TEXT,
+            video_url TEXT,
+            status TEXT DEFAULT 'pending',
+            is_compilation INTEGER DEFAULT 0,
+            posting_guide TEXT,
+            scheduled_at TIMESTAMP,
+            posted_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (mix_id) REFERENCES douyin_collections(mix_id) ON DELETE CASCADE
+        )
+    """)
+
     conn.commit()
     conn.close()
+
 
 # ----------------- OPERAÇÕES DE CANAIS -----------------
 
@@ -655,4 +718,346 @@ def cleanup_expired_sessions():
         return False
     finally:
         conn.close()
+
+
+# ----------------- OPERAÇÕES DE CONFIGURAÇÕES DE PERFIL -----------------
+
+def get_user_setting(key: str, default: str = None) -> str:
+    """Retorna o valor de uma configuração em user_settings."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT value FROM user_settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        return row["value"] if row else default
+    except Exception as e:
+        print(f"Erro ao obter configuração '{key}': {e}")
+        return default
+    finally:
+        conn.close()
+
+def set_user_setting(key: str, value: str) -> bool:
+    """Define/atualiza o valor de uma configuração em user_settings."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("""
+            INSERT INTO user_settings (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+        """, (key, str(value), now_str))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar configuração '{key}': {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# ----------------- OPERAÇÕES DE COLEÇÕES DO DOUYIN -----------------
+
+def upsert_douyin_collection(col: dict) -> bool:
+    """Insere ou atualiza uma coleção do Douyin no banco."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO douyin_collections (
+                mix_id, title_pt, title_zh, author, cover_url, total_episodes, autoposting, is_virtual, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(mix_id) DO UPDATE SET
+                title_pt = COALESCE(excluded.title_pt, douyin_collections.title_pt),
+                title_zh = COALESCE(excluded.title_zh, douyin_collections.title_zh),
+                author = COALESCE(excluded.author, douyin_collections.author),
+                cover_url = COALESCE(excluded.cover_url, douyin_collections.cover_url),
+                total_episodes = MAX(excluded.total_episodes, douyin_collections.total_episodes),
+                autoposting = excluded.autoposting,
+                status = excluded.status
+        """, (
+            str(col["mix_id"]),
+            col.get("title_pt", col.get("title_zh", f"Coleção #{col['mix_id']}")),
+            col.get("title_zh", ""),
+            col.get("author", "Desconhecido"),
+            col.get("cover_url", ""),
+            col.get("total_episodes", 0),
+            1 if col.get("autoposting", True) else 0,
+            1 if col.get("is_virtual", False) else 0,
+            col.get("status", "active")
+        ))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao inserir/atualizar coleção {col.get('mix_id')}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_douyin_collections(status_filter: str = None) -> list[dict]:
+    """Retorna todas as coleções cadastradas com estatísticas de episódios."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        query = """
+            SELECT 
+                c.*,
+                COUNT(e.id) as total_episodes_mapped,
+                SUM(CASE WHEN e.status = 'posted' THEN 1 ELSE 0 END) as posted_count,
+                SUM(CASE WHEN e.status = 'opaque_over_5min' THEN 1 ELSE 0 END) as opaque_count
+            FROM douyin_collections c
+            LEFT JOIN collection_episodes e ON c.mix_id = e.mix_id
+        """
+        params = []
+        if status_filter:
+            query += " WHERE c.status = ?"
+            params.append(status_filter)
+
+        query += " GROUP BY c.mix_id ORDER BY c.created_at DESC"
+        cursor.execute(query, params)
+        return [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        print(f"Erro ao buscar coleções do Douyin: {e}")
+        return []
+    finally:
+        conn.close()
+
+def get_douyin_collection_by_id(mix_id: str) -> dict | None:
+    """Retorna uma coleção específica pelo mix_id."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT 
+                c.*,
+                COUNT(e.id) as total_episodes_mapped,
+                SUM(CASE WHEN e.status = 'posted' THEN 1 ELSE 0 END) as posted_count,
+                SUM(CASE WHEN e.status = 'opaque_over_5min' THEN 1 ELSE 0 END) as opaque_count
+            FROM douyin_collections c
+            LEFT JOIN collection_episodes e ON c.mix_id = e.mix_id
+            WHERE c.mix_id = ?
+            GROUP BY c.mix_id
+        """, (str(mix_id),))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"Erro ao buscar coleção {mix_id}: {e}")
+        return None
+    finally:
+        conn.close()
+
+def toggle_collection_autoposting(mix_id: str, new_state: bool = None) -> bool:
+    """Inverte ou define o estado de autoposting (ON/OFF) da coleção."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        if new_state is None:
+            cursor.execute("UPDATE douyin_collections SET autoposting = CASE WHEN autoposting = 1 THEN 0 ELSE 1 END WHERE mix_id = ?", (str(mix_id),))
+        else:
+            val = 1 if new_state else 0
+            cursor.execute("UPDATE douyin_collections SET autoposting = ? WHERE mix_id = ?", (val, str(mix_id)))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao alterar autoposting da coleção {mix_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def update_collection_cover(mix_id: str, cover_url: str) -> bool:
+    """Atualiza a imagem de capa de uma coleção."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE douyin_collections SET cover_url = ? WHERE mix_id = ?", (cover_url, str(mix_id)))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao atualizar capa da coleção {mix_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def delete_douyin_collection(mix_id: str) -> bool:
+    """Deleta uma coleção e seus episódios do banco de dados."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM douyin_collections WHERE mix_id = ?", (str(mix_id),))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao deletar coleção {mix_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# ----------------- OPERAÇÕES DE EPISÓDIOS DA COLEÇÃO -----------------
+
+def upsert_collection_episode(ep: dict) -> bool:
+    """Insere ou atualiza um episódio de uma coleção."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO collection_episodes (
+                mix_id, episode_num, aweme_id, title, duration_seconds, likes, comments, cover_url, video_url, status, is_compilation
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(aweme_id) DO UPDATE SET
+                episode_num = COALESCE(excluded.episode_num, collection_episodes.episode_num),
+                title = excluded.title,
+                duration_seconds = excluded.duration_seconds,
+                likes = excluded.likes,
+                comments = excluded.comments,
+                cover_url = COALESCE(excluded.cover_url, collection_episodes.cover_url),
+                video_url = excluded.video_url,
+                is_compilation = excluded.is_compilation
+        """, (
+            str(ep["mix_id"]),
+            ep.get("episode_num"),
+            str(ep["aweme_id"]),
+            ep.get("title", ""),
+            ep.get("duration_seconds", 0),
+            ep.get("likes", 0),
+            ep.get("comments", 0),
+            ep.get("cover_url", ""),
+            ep.get("video_url", ""),
+            ep.get("status", "pending"),
+            1 if ep.get("is_compilation", False) else 0
+        ))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao inserir/atualizar episódio {ep.get('aweme_id')}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_collection_episodes(mix_id: str) -> list[dict]:
+    """Retorna todos os episódios de uma coleção ordenados por número do episódio."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT * FROM collection_episodes
+            WHERE mix_id = ?
+            ORDER BY CASE WHEN episode_num IS NULL THEN 999999 ELSE episode_num END ASC, id ASC
+        """, (str(mix_id),))
+        return [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        print(f"Erro ao buscar episódios da coleção {mix_id}: {e}")
+        return []
+    finally:
+        conn.close()
+
+def get_episode_by_id(ep_id: int) -> dict | None:
+    """Retorna um episódio pelo seu ID interno."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM collection_episodes WHERE id = ?", (ep_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"Erro ao buscar episódio #{ep_id}: {e}")
+        return None
+    finally:
+        conn.close()
+
+def update_episode_status(ep_id: int, status: str, scheduled_at: str = None, posted_at: str = None) -> bool:
+    """Atualiza o status e as datas de agendamento/publicação de um episódio."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        fields = ["status = ?"]
+        params = [status]
+
+        if scheduled_at:
+            fields.append("scheduled_at = ?")
+            params.append(scheduled_at)
+        if posted_at:
+            fields.append("posted_at = ?")
+            params.append(posted_at)
+
+        params.append(ep_id)
+        query = f"UPDATE collection_episodes SET {', '.join(fields)} WHERE id = ?"
+        cursor.execute(query, params)
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao atualizar status do episódio #{ep_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def update_episode_posting_guide(ep_id: int, guide_data) -> bool:
+    """Salva o guia de postagem (título PT, descrição, hashtags) no episódio."""
+    if isinstance(guide_data, (dict, list)):
+        guide_json_str = json.dumps(guide_data, ensure_ascii=False)
+    else:
+        guide_json_str = str(guide_data)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE collection_episodes SET posting_guide = ? WHERE id = ?", (guide_json_str, ep_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao atualizar guia de postagem do episódio #{ep_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def upsert_douyin_profile(sec_uid: str, nickname: str, avatar_url: str = "", profile_url: str = "") -> bool:
+    """Insere ou atualiza um perfil monitorado do Douyin."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO douyin_profiles (sec_uid, nickname, avatar_url, profile_url, updated_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(sec_uid) DO UPDATE SET
+                nickname = excluded.nickname,
+                avatar_url = excluded.avatar_url,
+                profile_url = excluded.profile_url,
+                updated_at = CURRENT_TIMESTAMP
+        """, (sec_uid, nickname, avatar_url, profile_url))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao inserir/atualizar perfil Douyin {sec_uid}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_douyin_profiles() -> list[dict]:
+    """Retorna todos os perfis monitorados do Douyin."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM douyin_profiles ORDER BY updated_at DESC")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    except Exception as e:
+        print(f"Erro ao buscar perfis Douyin: {e}")
+        return []
+    finally:
+        conn.close()
+
+def delete_douyin_profile(sec_uid: str) -> bool:
+    """Deleta um perfil do Douyin."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM douyin_profiles WHERE sec_uid = ?", (sec_uid,))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao deletar perfil Douyin {sec_uid}: {e}")
+        return False
+    finally:
+        conn.close()
+
 
