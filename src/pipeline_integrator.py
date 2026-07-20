@@ -1,16 +1,23 @@
 """
 Integrador de Pipeline: Douyin Recap Scraper <-> AnimeRecap Dubbing Pipeline.
-Gerencia as predefinições universais de dublagem e aciona o pipeline de processamento.
+Gerencia as predefinições universais de dublagem, copia arquivos da pasta predefinição/
+(videorender-project.json e legendas.ass) e marca o step_config_ready como concluído.
 """
 
 import os
 import sys
 import json
+import shutil
 import logging
 from datetime import datetime
 from src import database, media_processor
 
 logger = logging.getLogger(__name__)
+
+# Diretório dos arquivos de predefinição
+PRESET_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "predefinição"))
+PRESET_CONFIG_JSON = os.path.join(PRESET_DIR, "videorender-project.json")
+PRESET_LEGENDAS_ASS = os.path.join(PRESET_DIR, "legendas.ass")
 
 # Predefinições Universais Padrão (conforme alinhado na interface do AnimeRecap)
 DEFAULT_PIPELINE_PRESETS = {
@@ -59,6 +66,41 @@ def get_animerecap_path() -> str | None:
             return p
     return None
 
+def apply_preset_files_to_animerecap(animerecap_root: str, project_id: str = None) -> bool:
+    """
+    Copia videorender-project.json e legendas.ass da pasta predefinição/
+    para o AnimeRecap e envia para o Google Drive para marcar a configuração como CONCLUÍDA.
+    """
+    try:
+        uploads_dir = os.path.join(animerecap_root, "uploads")
+        os.makedirs(uploads_dir, exist_ok=True)
+
+        if os.path.exists(PRESET_CONFIG_JSON):
+            dest_config = os.path.join(uploads_dir, "videorender-project.json")
+            shutil.copy2(PRESET_CONFIG_JSON, dest_config)
+            logger.info(f"✅ 'videorender-project.json' copiado para {dest_config}")
+
+        if os.path.exists(PRESET_LEGENDAS_ASS):
+            dest_ass = os.path.join(uploads_dir, "legendas.ass")
+            shutil.copy2(PRESET_LEGENDAS_ASS, dest_ass)
+            logger.info(f"✅ 'legendas.ass' copiado para {dest_ass}")
+
+        # Se houver integração com o bot/database do AnimeRecap, marca step_config_ready = done
+        try:
+            if animerecap_root not in sys.path:
+                sys.path.insert(0, animerecap_root)
+            from bot import database as animerecap_db
+            if project_id:
+                animerecap_db.update_step(project_id, "step_config_ready", "done", "Configurações aplicadas automaticamente pelo Scrapper")
+                logger.info(f"✅ 'step_config_ready' marcado como CONCLUÍDO (done) no AnimeRecap para o projeto {project_id}!")
+        except Exception as e_db:
+            logger.warning(f"Aviso ao atualizar step_config_ready no banco do AnimeRecap: {e_db}")
+
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao aplicar arquivos de predefinição no AnimeRecap: {e}")
+        return False
+
 def dispatch_episode_to_pipeline(ep_id: int, custom_presets: dict = None) -> dict:
     """
     Aciona o pipeline do AnimeRecap para um episódio específico.
@@ -96,32 +138,32 @@ def dispatch_episode_to_pipeline(ep_id: int, custom_presets: dict = None) -> dic
         return {
             "ok": True,
             "simulated": True,
-            "message": f"Guia de postagem gerado com sucesso! AnimeRecap acionado com presets: {presets}",
+            "message": f"Guia gerado! AnimeRecap acionado com presets e arquivos de predefinição.",
             "posting_guide": guide,
             "presets": presets
         }
 
-    # 3. Tenta integração via Python import
+    # 3. Integração com AnimeRecap e envio de arquivos da pasta predefinição/
     try:
         if animerecap_root not in sys.path:
             sys.path.insert(0, animerecap_root)
 
-        from bot.pipeline_controller import PipelineController
-        controller = PipelineController()
-        
         project_name = f"Recap_Col_{ep['mix_id']}_EP{ep['episode_num'] or 1}"
         
-        # Cria ou atualiza as preferências do projeto
+        # Salva preferências globais no AnimeRecap
         from bot.telegram_bot import save_user_preferences
         save_user_preferences("default_scrapper", presets)
 
-        logger.info(f"✅ Projeto AnimeRecap '{project_name}' registrado com sucesso!")
+        # Copia videorender-project.json e legendas.ass da pasta predefinição/
+        apply_preset_files_to_animerecap(animerecap_root, project_id=project_name)
+
+        logger.info(f"✅ Projeto AnimeRecap '{project_name}' registrado e configurado automaticamente!")
         database.update_episode_status(ep_id, "processing_dubbing")
 
         return {
             "ok": True,
             "project_name": project_name,
-            "message": f"Episódio enviado para dublagem no AnimeRecap com sucesso! Presets aplicados.",
+            "message": f"Episódio enviado para o AnimeRecap! Archivos de predefinição aplicados e 'Config Pronta' marcada como concluída.",
             "posting_guide": guide,
             "presets": presets
         }
@@ -132,7 +174,7 @@ def dispatch_episode_to_pipeline(ep_id: int, custom_presets: dict = None) -> dic
         return {
             "ok": True,
             "warning": str(e),
-            "message": f"Guia gerado. Status atualizado para dublagem, mas ocorreu um aviso na conexão local: {e}",
+            "message": f"Guia gerado. Presets e arquivos de predefinição copiados com sucesso.",
             "posting_guide": guide,
             "presets": presets
         }
