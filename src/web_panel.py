@@ -15,13 +15,14 @@ from src.config import DOUYIN_API_BASE
 
 logger = logging.getLogger(__name__)
 
-ROOT_PATH = os.getenv("ROOT_PATH", "")
+ROOT_PATH = os.getenv("ROOT_PATH", "/scrapper")
 
 app = FastAPI(title="Douyin Scrapper & Vitrine", docs_url=None, redoc_url=None)
 
 # --- ROTAS DE API PARA COLEÇÕES, PERFIS E CONFIGURAÇÕES ---
 
 @app.get("/api/douyin/collections")
+@app.get("/scrapper/api/douyin/collections")
 async def get_douyin_collections_api():
     cols = database.get_douyin_collections()
     daily_rate = episode_scheduler.get_daily_post_rate()
@@ -29,6 +30,7 @@ async def get_douyin_collections_api():
     return {"ok": True, "collections": cols, "daily_post_rate": daily_rate, "times": times}
 
 @app.get("/api/douyin/collections/{mix_id}")
+@app.get("/scrapper/api/douyin/collections/{mix_id}")
 async def get_douyin_collection_detail_api(mix_id: str):
     col = database.get_douyin_collection_by_id(mix_id)
     if not col:
@@ -37,6 +39,7 @@ async def get_douyin_collection_detail_api(mix_id: str):
     return {"ok": True, "collection": col, "episodes": eps}
 
 @app.post("/api/douyin/collections/add")
+@app.post("/scrapper/api/douyin/collections/add")
 async def add_douyin_collection_api(
     url: str = Form(...),
     title_pt: str = Form(None),
@@ -47,38 +50,45 @@ async def add_douyin_collection_api(
     return res
 
 @app.post("/api/douyin/collections/{mix_id}/toggle-autoposting")
+@app.post("/scrapper/api/douyin/collections/{mix_id}/toggle-autoposting")
 async def toggle_autoposting_api(mix_id: str):
     success = database.toggle_collection_autoposting(mix_id)
     col = database.get_douyin_collection_by_id(mix_id)
     return {"ok": success, "autoposting": col["autoposting"] if col else 0}
 
 @app.post("/api/douyin/collections/{mix_id}/delete")
+@app.post("/scrapper/api/douyin/collections/{mix_id}/delete")
 async def delete_collection_api(mix_id: str):
     success = database.delete_douyin_collection(mix_id)
     return {"ok": success}
 
 @app.post("/api/douyin/episodes/{ep_id}/action")
+@app.post("/scrapper/api/douyin/episodes/{ep_id}/action")
 async def apply_episode_action_api(ep_id: int, action: str = Form(...)):
     res = episode_scheduler.apply_episode_action(ep_id, action)
     return res
 
 @app.post("/api/douyin/settings/daily-post-rate")
+@app.post("/scrapper/api/douyin/settings/daily-post-rate")
 async def set_daily_post_rate_api(rate: int = Form(...)):
     success = episode_scheduler.set_daily_post_rate(rate)
     return {"ok": success, "daily_post_rate": rate, "times": episode_scheduler.get_autopost_times()}
 
 @app.post("/api/douyin/settings/autopost-times")
+@app.post("/scrapper/api/douyin/settings/autopost-times")
 async def set_autopost_times_api(times: str = Form(...)):
     time_list = [t.strip() for t in times.split(",") if t.strip()]
     success = episode_scheduler.set_autopost_times(time_list)
     return {"ok": success, "times": episode_scheduler.get_autopost_times()}
 
 @app.get("/api/douyin/settings/cookie")
+@app.get("/scrapper/api/douyin/settings/cookie")
 async def get_cookie_api():
     cookie = os.getenv("DOUYIN_COOKIE", "").strip()
     return {"ok": True, "cookie": cookie}
 
 @app.post("/api/douyin/settings/cookie")
+@app.post("/scrapper/api/douyin/settings/cookie")
 async def save_cookie_api(cookie: str = Form(...)):
     cookie_val = cookie.strip()
     from pathlib import Path
@@ -109,26 +119,31 @@ async def save_cookie_api(cookie: str = Form(...)):
         return {"ok": False, "message": f"Erro ao salvar cookie: {e}"}
 
 @app.get("/api/douyin/profiles")
+@app.get("/scrapper/api/douyin/profiles")
 async def get_douyin_profiles_api():
     profs = database.get_douyin_profiles()
     return {"ok": True, "profiles": profs}
 
 @app.post("/api/douyin/profiles/add")
+@app.post("/scrapper/api/douyin/profiles/add")
 async def add_douyin_profile_api(url: str = Form(...)):
     res = douyin_profile_scraper.fetch_and_store_profile(url)
     return res
 
 @app.post("/api/douyin/profiles/{sec_uid}/delete")
+@app.post("/scrapper/api/douyin/profiles/{sec_uid}/delete")
 async def delete_douyin_profile_api(sec_uid: str):
     success = database.delete_douyin_profile(sec_uid)
     return {"ok": success}
 
 @app.post("/api/douyin/sync")
+@app.post("/scrapper/api/douyin/sync")
 async def sync_all_content_api(background_tasks: BackgroundTasks):
     background_tasks.add_task(douyin_profile_scraper.sync_all_profiles_and_collections)
     return {"ok": True, "message": "Varredura autônoma iniciada em background."}
 
 @app.get("/api/status")
+@app.get("/scrapper/api/status")
 async def get_status(bvids: str):
     bvid_list = [b.strip() for b in bvids.split(",") if b.strip()]
     if not bvid_list:
@@ -165,6 +180,8 @@ def get_access_denied_page():
 </html>"""
 
 @app.get("/", response_class=HTMLResponse)
+@app.get("/scrapper", response_class=HTMLResponse)
+@app.get("/scrapper/", response_class=HTMLResponse)
 async def index(
     request: Request,
     session: str = Query(None),
@@ -179,12 +196,12 @@ async def index(
         
     if session:
         if database.validate_web_session(session):
-            cookie_path = ROOT_PATH if ROOT_PATH else "/"
-            redirect_url = f"{ROOT_PATH}/?tab={tab}&type={type}&duration={duration}"
+            cookie_path = "/scrapper"
+            redirect_url = f"/scrapper/?tab={tab}&type={type}&duration={duration}"
             redir_resp = RedirectResponse(url=redirect_url, status_code=303)
             redir_resp.set_cookie(
                 key="scrapper_session", value=session, max_age=1800,
-                httponly=True, samesite="lax", secure=False, path=cookie_path
+                httponly=True, samesite="lax", secure=False, path="/"
             )
             return redir_resp
         else:
@@ -194,7 +211,6 @@ async def index(
     if not database.validate_web_session(cookie_token):
         return HTMLResponse(content=get_access_denied_page(), status_code=401)
 
-    # Variáveis ativas da navegação
     tab_collections_active = "active" if tab == "collections" else ""
     tab_profiles_active = "active" if tab == "profiles" else ""
     tab_search_active = "active" if tab == "search" else ""
@@ -329,7 +345,6 @@ async def index(
         </div>
         """
 
-    # Retorna o HTML Renderizado com os Scripts JS devidamente escapados
     return HTMLResponse(content=get_full_html_page(
         tab=tab, type=type, duration=duration,
         header_action_button=header_action_button,
@@ -389,16 +404,16 @@ def get_full_html_page(tab, type, duration, header_action_button, content_html,
 </head>
 <body>
     <header>
-        <a href="{ROOT_PATH}/?tab=collections" class="brand">🍿 Douyin Scrapper</a>
+        <a href="/scrapper/?tab=collections" class="brand">🍿 Douyin Scrapper</a>
         {header_action_button}
     </header>
 
     <div class="tabs-row">
-        <a href="{ROOT_PATH}/?tab=collections&type={type}&duration={duration}" class="tab-link {tab_collections_active}">🍿 Coleções Douyin</a>
-        <a href="{ROOT_PATH}/?tab=profiles&type={type}&duration={duration}" class="tab-link {tab_profiles_active}">👤 Perfis Douyin</a>
-        <a href="{ROOT_PATH}/?tab=search&type={type}&duration={duration}" class="tab-link {tab_search_active}">🔍 Busca Geral</a>
-        <a href="{ROOT_PATH}/?tab=updates&type={type}&duration={duration}" class="tab-link {tab_updates_active}">🔔 Atualizações</a>
-        <a href="{ROOT_PATH}/?tab=cart&type={type}&duration={duration}" class="tab-link {tab_cart_active}">🛒 Carrinho / Fila</a>
+        <a href="/scrapper/?tab=collections&type={type}&duration={duration}" class="tab-link {tab_collections_active}">🍿 Coleções Douyin</a>
+        <a href="/scrapper/?tab=profiles&type={type}&duration={duration}" class="tab-link {tab_profiles_active}">👤 Perfis Douyin</a>
+        <a href="/scrapper/?tab=search&type={type}&duration={duration}" class="tab-link {tab_search_active}">🔍 Busca Geral</a>
+        <a href="/scrapper/?tab=updates&type={type}&duration={duration}" class="tab-link {tab_updates_active}">🔔 Atualizações</a>
+        <a href="/scrapper/?tab=cart&type={type}&duration={duration}" class="tab-link {tab_cart_active}">🛒 Carrinho / Fila</a>
     </div>
 
     <main>{content_html}</main>
@@ -438,7 +453,7 @@ def get_full_html_page(tab, type, duration, header_action_button, content_html,
     </div>
 
     <script>
-        const ROOT_PATH = "{ROOT_PATH}";
+        const ROOT_PATH = "/scrapper";
 
         function updateDailyPostRate(rate) {{
             const formData = new FormData();
