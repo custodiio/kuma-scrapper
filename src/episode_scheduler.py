@@ -227,36 +227,22 @@ def trigger_pre_render_for_next_episode():
 
     logger.info(f"⚡ Acionando pré-processamento do AnimeRecap para o EP #{ep_id} ({target_ep['title'][:30]})...")
     
-    # 1. Aciona o AnimeRecap (TTS + Legenda + Render + Guia PT-BR)
+    # 1. Aciona o AnimeRecap (Download + Corte 2:45 + Presets no Omni + Configs)
     res_pipeline = pipeline_integrator.dispatch_episode_to_pipeline(ep_id)
     
-    # 2. Copia/Isola o arquivo pronto para a pasta de staging
-    staged_file = os.path.join(STAGING_DIR, f"next_ep_{ep_id}.mp4")
-    
-    # 3. Calcula o próximo horário personalizado pelo usuário
+    # 2. Calcula o próximo horário personalizado pelo usuário para agendamento futuro no Post_recap (pós-render)
     target_time = get_next_scheduled_target_time()
-    
-    res_post = post_recap_integrator.schedule_episode_post(
-        ep_id=ep_id,
-        scheduled_time=target_time,
-        post_youtube=True,
-        post_shorts=True,
-        post_tiktok=True,
-        post_instagram=False  # Instagram desativado por enquanto
-    )
 
     return {
         "episode_id": ep_id,
-        "staging_path": staged_file,
         "pipeline_result": res_pipeline,
-        "post_schedule_result": res_post,
         "scheduled_target_time": target_time.strftime("%Y-%m-%d %H:%M:%S")
     }
 
 def apply_episode_action(ep_id: int, action: str) -> dict:
     """
     Aplica ações em episódios (ex: acelerar, dividir, postar agora, descartar).
-    Para episódios avulsos ou acionamentos 'post_now', roda de forma isolada.
+    Para episódios avulsos ou acionamentos 'post_now', roda de forma isolada no pipeline.
     """
     ep = database.get_episode_by_id(ep_id)
     if not ep:
@@ -276,26 +262,18 @@ def apply_episode_action(ep_id: int, action: str) -> dict:
 
     success = database.update_episode_status(ep_id, new_status)
     
-    # Se for acionamento 'post_now' (Vídeo Avulso ou Postar Agora), roda em isolamento imediato
+    # Se for acionamento 'post_now' (Vídeo Avulso ou Postar Agora), dispara o pipeline isolado
     if action == "post_now":
-        logger.info(f"⚡ Executando disparo manual isolado para o episódio #{ep_id}...")
+        logger.info(f"⚡ Executando disparo manual isolado no pipeline para o episódio #{ep_id}...")
         pipeline_res = pipeline_integrator.dispatch_episode_to_pipeline(ep_id)
-        post_res = post_recap_integrator.schedule_episode_post(
-            ep_id=ep_id,
-            scheduled_time=datetime.now() + timedelta(minutes=5),  # Agenda para os próximos 5 min
-            post_youtube=True,
-            post_shorts=True,
-            post_tiktok=True,
-            post_instagram=False
-        )
+        
         return {
             "ok": True,
             "episode_id": ep_id,
             "action": action,
             "manual_execution": True,
             "pipeline": pipeline_res,
-            "post_schedule": post_res,
-            "message": f"⚡ Disparo de vídeo avulso/manual isolado do episódio #{ep_id} iniciado com sucesso!"
+            "message": f"⚡ Disparo de vídeo avulso/manual isolado do episódio #{ep_id} iniciado no AnimeRecap com sucesso!"
         }
 
     if success:

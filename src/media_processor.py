@@ -35,7 +35,32 @@ def get_video_duration(video_path: str) -> float:
         logger.error(f"Erro ao obter duração do vídeo via ffprobe: {e}")
         return 0.0
 
-def truncate_video(input_path: str, output_path: str, seconds: float = 175.0) -> bool:
+def adjust_video_duration_for_pipeline(input_path: str, output_path: str, target_max_seconds: float = 165.0) -> tuple[str, str]:
+    """
+    Ajusta a duração do vídeo para o pipeline AnimeRecap.
+    - Se a duração for <= 240s (4 min): ajusta/acelera ou trunca para 2:45min (165s max) com margem de segurança.
+    - Se a duração for > 240s (>4 min): retorna o status 'opaque_over_5min' indicando que requer ação do usuário (dividir/descartar).
+    """
+    if not os.path.exists(input_path):
+        logger.error(f"Arquivo não encontrado: {input_path}")
+        return input_path, "error"
+
+    duration = get_video_duration(input_path)
+    logger.info(f"Analisando duração do vídeo {os.path.basename(input_path)}: {duration:.2f}s")
+
+    if duration > 240.0:
+        logger.warning(f"⚠️ Vídeo de {duration:.2f}s excede 4 minutos (>240s). Requer ação do usuário (Dividir / Descartar).")
+        return input_path, "opaque_over_5min"
+
+    if duration > target_max_seconds:
+        logger.info(f"Vídeo de {duration:.2f}s está entre 165s e 240s. Ajustando/truncando para {target_max_seconds}s (2:45min)...")
+        success = truncate_video(input_path, output_path, seconds=target_max_seconds)
+        if success and os.path.exists(output_path):
+            return output_path, "adjusted"
+
+    return input_path, "ready"
+
+def truncate_video(input_path: str, output_path: str, seconds: float = 165.0) -> bool:
     """Corta o vídeo para uma duração máxima em segundos de forma ultrarrápida (sem re-codificar)."""
     if not os.path.exists(input_path):
         logger.error(f"Arquivo de entrada não encontrado para corte: {input_path}")

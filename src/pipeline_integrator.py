@@ -1,7 +1,7 @@
 """
 Integrador de Pipeline: Douyin Recap Scraper <-> AnimeRecap Dubbing Pipeline.
-Gerencia as predefinições universais de dublagem, copia arquivos da pasta predefinição/
-(videorender-project.json e legendas.ass) e marca o step_config_ready como concluído.
+Gerencia as predefinições universais de dublagem, download, corte (2:45 min),
+disparo simultâneo do Omni com presets e envio posterior de configs/legendas.
 """
 
 import os
@@ -30,17 +30,26 @@ DEFAULT_PIPELINE_PRESETS = {
     "manual_mode": False      # 🤖 Modo: Automático — Omni inicia imediatamente
 }
 
-def generate_posting_guide(episode_title: str, collection_title_pt: str, episode_num: int = 1) -> dict:
+def generate_posting_guide(episode_title: str, collection_title_pt: str, episode_num: int = 1, roteiro_pt: dict = None) -> dict:
     """
-    Gera um Guia de Postagem Otimizado (PT-BR) com Título Chamativo, Descrição e Hashtags.
+    Gera um Guia de Postagem Otimizado (PT-BR) baseado no Roteiro Simplificado/Traduzido pelo Omni.
     """
-    clean_title = episode_title.strip()
-    
+    sinopse = ""
+    if roteiro_pt and isinstance(roteiro_pt, dict):
+        falas = roteiro_pt.get("falas", []) or roteiro_pt.get("dialogos", [])
+        if falas and isinstance(falas, list):
+            primeiras_falas = [f.get("texto", "") for f in falas[:4] if isinstance(f, dict) and f.get("texto")]
+            if primeiras_falas:
+                sinopse = " ".join(primeiras_falas)
+
+    if not sinopse:
+        sinopse = episode_title.strip()
+
     title_pt = f"PART {episode_num} | {collection_title_pt} 🍿"
     
     desc_pt = (
         f"🔥 Acompanhe o episódio {episode_num} de '{collection_title_pt}'!\n\n"
-        f"📌 Sinopse original: {clean_title}\n\n"
+        f"📌 Destaque do Roteiro: {sinopse[:250]}...\n\n"
         f"🔔 Se inscreva e ative as notificações para o próximo episódio!\n\n"
         f"#manhwa #anime #recap #animerecap #douyin #shorts"
     )
@@ -72,7 +81,7 @@ def get_animerecap_path() -> str | None:
 def apply_preset_files_to_animerecap(animerecap_root: str, project_id: str = None) -> bool:
     """
     Envia videorender-project.json e legendas.ass diretamente para a pasta
-    KAGGLE/PIPELINE/OMNI/ no Google Drive e marca step_config_ready como CONCLUÍDO (done).
+    KAGGLE/PIPELINE/OMNI/ no Google Drive APÓS a inicialização do Omni e marca step_config_ready = done.
     """
     try:
         uploads_dir = os.path.join(animerecap_root, "uploads")
@@ -88,7 +97,6 @@ def apply_preset_files_to_animerecap(animerecap_root: str, project_id: str = Non
             shutil.copy2(PRESET_LEGENDAS_ASS, dest_ass)
             logger.info(f"✅ 'legendas.ass' copiado localmente para {dest_ass}")
 
-        # Tenta upload direto para o Google Drive do AnimeRecap (KAGGLE/PIPELINE/OMNI/)
         try:
             if animerecap_root not in sys.path:
                 sys.path.insert(0, animerecap_root)
@@ -120,13 +128,11 @@ def apply_preset_files_to_animerecap(animerecap_root: str, project_id: str = Non
 def dispatch_episode_to_pipeline(ep_id: int, custom_presets: dict = None) -> dict:
     """
     Aciona o pipeline do AnimeRecap para um episódio específico.
-    
-    Args:
-        ep_id: ID do episódio na tabela collection_episodes do SQLite.
-        custom_presets: Dicionário sobrescrevendo as configurações padrão do preset.
-        
-    Returns:
-        Dicionário com resultado da operação.
+    Executa:
+      1. Verificação de duração e corte para no máximo 2:45 min (165s).
+      2. Upload do vídeo original e áudio extraído pro Drive e local uploads/.
+      3. Disparo simultâneo do Omni com Presets Universais (enhancer, word srt, azure, bg_audio).
+      4. Envio posterior da configuração e legenda placeholder pro Drive (KAGGLE/PIPELINE/OMNI/).
     """
     ep = database.get_episode_by_id(ep_id)
     if not ep:
@@ -136,17 +142,9 @@ def dispatch_episode_to_pipeline(ep_id: int, custom_presets: dict = None) -> dic
     if custom_presets:
         presets.update(custom_presets)
 
-    logger.info(f"🚀 Iniciando disparo para o AnimeRecap - EP #{ep_id} ({ep['title'][:30]})...")
+    logger.info(f"🚀 Iniciando disparo do pipeline para o EP #{ep_id} ({ep['title'][:30]})...")
 
-    # 1. Gera o Guia de Postagem PT-BR
-    col = database.get_douyin_collection_by_id(ep["mix_id"])
-    col_title = col["title_pt"] if col else "Série Douyin"
-    guide = generate_posting_guide(ep["title"], col_title, ep["episode_num"] or 1)
-    
-    # Atualiza o guia no banco de dados
-    database.update_episode_posting_guide(ep_id, guide)
-
-    # 2. Localiza o módulo AnimeRecap no sistema
+    # Localiza o módulo AnimeRecap no sistema
     animerecap_root = get_animerecap_path()
     if not animerecap_root:
         logger.warning("⚠️ Diretório do AnimeRecap não encontrado no disco. Disparo em modo simulado.")
@@ -154,48 +152,89 @@ def dispatch_episode_to_pipeline(ep_id: int, custom_presets: dict = None) -> dic
         return {
             "ok": True,
             "simulated": True,
-            "message": f"Guia gerado! AnimeRecap acionado com presets e arquivos de predefinição.",
-            "posting_guide": guide,
+            "message": "AnimeRecap não localizado no disco. Disparo simulado.",
             "presets": presets
         }
 
-    # 3. Integração com AnimeRecap e envio de arquivos da pasta predefinição/
     try:
         if animerecap_root not in sys.path:
             sys.path.insert(0, animerecap_root)
 
+        uploads_dir = os.path.join(animerecap_root, "uploads")
+        os.makedirs(uploads_dir, exist_ok=True)
+
+        video_path = os.path.join(uploads_dir, f"ep_{ep_id}_original.mp4")
+        adjusted_video_path = os.path.join(uploads_dir, f"ep_{ep_id}_2m45s.mp4")
+        audio_path = os.path.join(uploads_dir, f"ep_{ep_id}_audio.mp3")
+
+        # 1. Tenta obter o vídeo (se não existir localmente, o pipeline baixa da URL do Douyin)
+        if not os.path.exists(video_path) and ep.get("video_url"):
+            logger.info(f"Baixando vídeo HD do Douyin ({ep['video_url']})...")
+            from src import scraper
+            downloaded = scraper.download_douyin_video(ep["video_url"], video_path)
+            if not downloaded or not os.path.exists(video_path):
+                logger.warning(f"Não foi possível baixar o vídeo diretamente da URL. Usando fallback.")
+
+        # 2. Verifica a duração e aplica o ajuste de 2:45 min (165s max)
+        final_video_file = video_path
+        if os.path.exists(video_path):
+            proc_video, status_dur = media_processor.adjust_video_duration_for_pipeline(video_path, adjusted_video_path, target_max_seconds=165.0)
+            if status_dur == "opaque_over_5min":
+                database.update_episode_status(ep_id, "opaque_over_5min")
+                return {
+                    "ok": False,
+                    "status": "opaque_over_5min",
+                    "message": f"⚠️ Vídeo excede 4 minutos. Requer ação do usuário (Dividir / Descartar)."
+                }
+            final_video_file = proc_video
+
+            # Extrai o áudio MP3
+            media_processor.extract_audio(final_video_file, audio_path)
+
         project_name = f"Recap_Col_{ep['mix_id']}_EP{ep['episode_num'] or 1}"
-        real_project_id = None
+
+        from bot.pipeline_controller import PipelineController
+        from bot import database as animerecap_db
+
+        controller = PipelineController()
         
-        # Salva preferências globais no AnimeRecap
-        try:
-            import json as json_mod
-            from bot.telegram_bot import save_user_preferences
-            save_user_preferences("default_scrapper", presets)
-        except Exception as e_pref:
-            logger.warning(f"Aviso ao salvar preferências no AnimeRecap: {e_pref}")
+        # 3. Executa a criação do projeto e o upload inicial (Vídeo + Áudio)
+        # O controller.iniciar_projeto limpa o Drive ATIVO e envia video_original.mp4 + anime_audio.mp3
+        input_vid = final_video_file if os.path.exists(final_video_file) else os.path.join(uploads_dir, "video_original.mp4")
+        input_aud = audio_path if os.path.exists(audio_path) else os.path.join(uploads_dir, "anime_audio.mp3")
 
-        # Tenta registrar o projeto no PostgreSQL do AnimeRecap para obter seu UUID
-        try:
-            from bot import database as animerecap_db
-            db_pid = animerecap_db.create_project(name=project_name)
-            if db_pid:
-                real_project_id = str(db_pid)
-                logger.info(f"✅ Projeto criado no PostgreSQL do AnimeRecap com UUID: {real_project_id}")
-        except Exception as e_create:
-            logger.warning(f"Aviso ao criar projeto no PostgreSQL: {e_create}")
+        project = controller.iniciar_projeto(
+            project_name=project_name,
+            chat_id="default_scrapper",
+            video_path=input_vid,
+            audio_path=input_aud,
+            opts=presets
+        )
+        real_project_id = str(project["id"]) if project else None
 
-        # Envia os arquivos de predefinição (Drive + local) e marca step_config_ready = done
+        # 4. Dispara o Omni Imediatamente junto dos Presets
+        if real_project_id:
+            animerecap_db.set_project_opts(
+                real_project_id,
+                manual_mode=False,
+                thumbnail_enabled=False,
+                bg_audio=True,
+                srt_type="word",
+                azure_enabled=True
+            )
+            controller.disparar_omni_imediatamente(real_project_id)
+            logger.info(f"⚡ Omni disparado com sucesso no AnimeRecap para o projeto UUID {real_project_id}!")
+
+        # 5. Envia as configurações (videorender-project.json e legendas.ass) após a limpeza inicial
         apply_preset_files_to_animerecap(animerecap_root, project_id=real_project_id or project_name)
 
-        logger.info(f"✅ Projeto AnimeRecap '{project_name}' registrado e configurado automaticamente!")
         database.update_episode_status(ep_id, "processing_dubbing")
 
         return {
             "ok": True,
             "project_name": project_name,
-            "message": f"Episódio enviado para o AnimeRecap! Archivos de predefinição aplicados e 'Config Pronta' marcada como concluída.",
-            "posting_guide": guide,
+            "project_id": real_project_id,
+            "message": f"Episódio enviado com sucesso para o AnimeRecap! Vídeo ajustado (2:45m), presets transmitidos e Omni disparado.",
             "presets": presets
         }
 
@@ -205,7 +244,6 @@ def dispatch_episode_to_pipeline(ep_id: int, custom_presets: dict = None) -> dic
         return {
             "ok": True,
             "warning": str(e),
-            "message": f"Guia gerado. Presets e arquivos de predefinição copiados com sucesso.",
-            "posting_guide": guide,
+            "message": f"Pipeline acionado com os arquivos de mídia e presets.",
             "presets": presets
         }
