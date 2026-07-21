@@ -111,7 +111,9 @@ export default function SeriesDetailModal({ collectionDetail, onClose, onToggleA
                           <button className="btn-primary" onClick={() => onApplyEpAction(ep.id, 'post_now')} style={{ fontSize: '0.78rem', padding: '6px 10px' }}>⚡ Postar Agora</button>
                           <button className="btn-secondary" onClick={() => onApplyEpAction(ep.id, 'next_in_queue')} style={{ fontSize: '0.78rem', padding: '6px 10px' }}>🔝 Fila</button>
                         </>
-                      ) : null}
+                      ) : (
+                        <button className="btn-secondary" onClick={() => onApplyEpAction(ep.id, 'force_post_now')} style={{ fontSize: '0.78rem', padding: '6px 10px', background: 'rgba(255,255,255,0.08)' }}>🔄 Forçar Repostar</button>
+                      )}
                     </div>
                   </div>
                 );

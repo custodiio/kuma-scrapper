@@ -248,12 +248,12 @@ def apply_episode_action(ep_id: int, action: str) -> dict:
     if not ep:
         return {"ok": False, "message": f"Episódio #{ep_id} não encontrado."}
 
-    valid_actions = ["post_now", "next_in_queue", "keep_original", "accelerate", "ignore"]
+    valid_actions = ["post_now", "force_post_now", "next_in_queue", "keep_original", "accelerate", "ignore"]
     if action not in valid_actions:
         return {"ok": False, "message": f"Ação '{action}' inválida."}
 
     new_status = "pending"
-    if action == "post_now":
+    if action in ["post_now", "force_post_now"]:
         new_status = "post_now"
     elif action == "next_in_queue":
         new_status = "next_in_queue"
@@ -262,18 +262,22 @@ def apply_episode_action(ep_id: int, action: str) -> dict:
 
     success = database.update_episode_status(ep_id, new_status)
     
-    # Se for acionamento 'post_now' (Vídeo Avulso ou Postar Agora), dispara o pipeline isolado
-    if action == "post_now":
-        logger.info(f"⚡ Executando disparo manual isolado no pipeline para o episódio #{ep_id}...")
-        pipeline_res = pipeline_integrator.dispatch_episode_to_pipeline(ep_id)
+    # Se for acionamento 'post_now' ou 'force_post_now', dispara o pipeline
+    if action in ["post_now", "force_post_now"]:
+        force_flag = (action == "force_post_now")
+        logger.info(f"⚡ Executando disparo manual no pipeline para o episódio #{ep_id} (force={force_flag})...")
+        pipeline_res = pipeline_integrator.dispatch_episode_to_pipeline(ep_id, force=force_flag)
         
+        if not pipeline_res.get("ok"):
+            return pipeline_res
+
         return {
             "ok": True,
             "episode_id": ep_id,
             "action": action,
             "manual_execution": True,
             "pipeline": pipeline_res,
-            "message": f"⚡ Disparo de vídeo avulso/manual isolado do episódio #{ep_id} iniciado no AnimeRecap com sucesso!"
+            "message": f"⚡ Disparo do episódio #{ep_id} iniciado no AnimeRecap com sucesso!"
         }
 
     if success:
