@@ -8,7 +8,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
-dist/
+# dist/ — não ignorar o build do frontend para deploy na VPS
+!frontend/dist/
 build/
 
 # Dados locais
