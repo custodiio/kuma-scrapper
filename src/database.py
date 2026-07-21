@@ -965,6 +965,20 @@ def get_episode_by_id(ep_id: int) -> dict | None:
     finally:
         conn.close()
 
+def get_episodes_by_status(status: str) -> list:
+    """Retorna todos os episódios com o status informado."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM collection_episodes WHERE status = ?", (status,))
+        rows = cursor.fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"Erro ao buscar episódios com status '{status}': {e}")
+        return []
+    finally:
+        conn.close()
+
 def update_episode_status(ep_id: int, status: str, scheduled_at: str = None, posted_at: str = None) -> bool:
     """Atualiza o status e as datas de agendamento/publicação de um episódio."""
     conn = get_connection()
