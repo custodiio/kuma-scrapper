@@ -35,49 +35,63 @@ class ScrapeResult:
     skipped_likes: int = 0                              # Pulados por likes baixos
 
 
-# ─── Busca e Download no Douyin via Evil0ctal API ────────────────────────────
+# ─── Download via Evil0ctal API (mesmo método do drama-pipeline) ─────────────
 
 def download_douyin_video(video_url_or_id: str, output_path: str) -> bool:
     """
-    Baixa o vídeo em alta definição sem marca d'água usando a API local do Evil0ctal.
+    Baixa o vídeo do Douyin sem marca d'água.
+    Usa o mesmo método do drama-pipeline: Evil0ctal /api/download (porta 5555).
+    Fallback: yt-dlp.
     """
-    try:
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        log.info(f"📥 Baixando vídeo do Douyin ({video_url_or_id}) para {output_path}...")
-        
-        # 1. Tenta via endpoint /api/download
-        api_download_url = f"{DOUYIN_API_BASE}/api/download"
-        with httpx.Client(timeout=60.0) as client:
-            resp = client.get(api_download_url, params={"url": video_url_or_id, "prefix": "true", "with_watermark": "false"})
-            if resp.status_code == 200 and len(resp.content) > 10000:
-                with open(output_path, "wb") as f:
-                    f.write(resp.content)
-                log.info(f"✅ Vídeo baixado com sucesso via /api/download ({os.path.getsize(output_path)} bytes)!")
-                return True
-                
-        # 2. Fallback: busca url_list direta via fetch_one_video
-        aweme_id = video_url_or_id.split("/")[-1] if "/" in video_url_or_id else video_url_or_id
-        if aweme_id.isdigit():
-            fetch_url = f"{DOUYIN_API_BASE}/api/douyin/web/fetch_one_video"
-            with httpx.Client(timeout=30.0) as client:
-                r_one = client.get(fetch_url, params={"aweme_id": aweme_id})
-                if r_one.status_code == 200:
-                    aweme_detail = r_one.json().get("data", {}).get("aweme_detail", {})
-                    play_addr = aweme_detail.get("video", {}).get("play_addr", {}).get("url_list", [])
-                    if play_addr:
-                        real_vid_url = play_addr[0]
-                        r_vid = client.get(real_vid_url, headers={"User-Agent": "Mozilla/5.0"})
-                        if r_vid.status_code == 200 and len(r_vid.content) > 10000:
-                            with open(output_path, "wb") as f:
-                                f.write(r_vid.content)
-                            log.info(f"✅ Vídeo baixado via fallback play_addr ({os.path.getsize(output_path)} bytes)!")
-                            return True
+    import subprocess
 
-        log.error(f"❌ Não foi possível baixar o vídeo {video_url_or_id}")
-        return False
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    if not video_url_or_id.startswith("http"):
+        video_url_or_id = f"https://www.douyin.com/video/{video_url_or_id}"
+
+    log.info(f"📥 Baixando vídeo via Evil0ctal API: {video_url_or_id}")
+
+    # 1. Evil0ctal /api/download — igual ao drama-pipeline
+    try:
+        api_url = f"{DOUYIN_API_BASE}/api/download"
+        with httpx.Client(timeout=120.0) as client:
+            with client.stream("GET", api_url, params={"url": video_url_or_id, "with_watermark": "false"}) as r:
+                content_type = r.headers.get("Content-Type", "")
+                if r.status_code == 200 and "application/json" not in content_type:
+                    with open(output_path, "wb") as f:
+                        for chunk in r.iter_bytes(chunk_size=16384):
+                            f.write(chunk)
+                    if os.path.exists(output_path) and os.path.getsize(output_path) > 10000:
+                        log.info(f"✅ Vídeo baixado via Evil0ctal API ({os.path.getsize(output_path):,} bytes)!")
+                        return True
+                else:
+                    r.read()
+                    log.warning(f"Evil0ctal API retornou JSON/erro: status={r.status_code}")
     except Exception as e:
-        log.error(f"❌ Erro ao baixar vídeo {video_url_or_id}: {e}")
-        return False
+        log.warning(f"Evil0ctal API erro: {e}")
+
+    # 2. Fallback: yt-dlp (não requer cookie)
+    log.info("Tentando fallback via yt-dlp (sem cookie)...")
+    try:
+        cmd = [
+            "yt-dlp", "--no-warnings", "--quiet",
+            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "--merge-output-format", "mp4",
+            "-o", output_path,
+            video_url_or_id,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 10000:
+            log.info(f"✅ Vídeo baixado via yt-dlp ({os.path.getsize(output_path):,} bytes)!")
+            return True
+        log.warning(f"yt-dlp falhou (rc={result.returncode}): {result.stderr[:200]}")
+    except Exception as e:
+        log.error(f"yt-dlp erro: {e}")
+
+    log.error(f"❌ Não foi possível baixar o vídeo: {video_url_or_id}")
+    return False
+
 
 def search_douyin(keyword: str, count: int = 30, sort_type: int = 2) -> list[dict]:
     """
