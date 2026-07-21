@@ -4,6 +4,7 @@ Busca vídeos no Douyin via Evil0ctal API, filtra por duração/likes/duplicatas
 detecta continuação de episódios, e retorna candidatos categorizados.
 """
 
+import os
 import time
 import logging
 import httpx
