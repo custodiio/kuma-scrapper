@@ -133,30 +133,44 @@ async def save_cookie_api(cookie: str = Form(...)):
 @app.get("/scrapper/api/douyin/settings/social-defaults")
 async def get_social_defaults_api():
     post_yt = database.get_user_setting("default_post_youtube", "1") != "0"
+    yt_privacy = database.get_user_setting("default_youtube_privacy", "public")
+
     post_shorts = database.get_user_setting("default_post_shorts", "1") != "0"
+    shorts_privacy = database.get_user_setting("default_shorts_privacy", "public")
+
     post_tiktok = database.get_user_setting("default_post_tiktok", "1") != "0"
-    privacy = database.get_user_setting("default_tiktok_privacy", "PUBLIC")
+    tiktok_privacy = database.get_user_setting("default_tiktok_privacy", "PUBLIC")
+
     return {
         "ok": True,
         "post_youtube": post_yt,
+        "youtube_privacy": yt_privacy,
         "post_shorts": post_shorts,
+        "shorts_privacy": shorts_privacy,
         "post_tiktok": post_tiktok,
-        "tiktok_privacy": privacy
+        "tiktok_privacy": tiktok_privacy
     }
 
 @app.post("/api/douyin/settings/social-defaults")
 @app.post("/scrapper/api/douyin/settings/social-defaults")
 async def set_social_defaults_api(
     post_youtube: str = Form("1"),
+    youtube_privacy: str = Form("public"),
     post_shorts: str = Form("1"),
+    shorts_privacy: str = Form("public"),
     post_tiktok: str = Form("1"),
     tiktok_privacy: str = Form("PUBLIC")
 ):
     database.set_user_setting("default_post_youtube", "1" if post_youtube == "1" else "0")
+    database.set_user_setting("default_youtube_privacy", youtube_privacy)
+
     database.set_user_setting("default_post_shorts", "1" if post_shorts == "1" else "0")
+    database.set_user_setting("default_shorts_privacy", shorts_privacy)
+
     database.set_user_setting("default_post_tiktok", "1" if post_tiktok == "1" else "0")
     database.set_user_setting("default_tiktok_privacy", tiktok_privacy)
-    return {"ok": True, "message": "Padrões de redes sociais e privacidade salvos!"}
+
+    return {"ok": True, "message": "Padrões de redes sociais e privacidades salvos!"}
 
 @app.get("/api/douyin/profiles")
 @app.get("/scrapper/api/douyin/profiles")

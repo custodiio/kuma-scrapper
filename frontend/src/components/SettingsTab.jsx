@@ -6,9 +6,13 @@ export default function SettingsTab({ settings, onSaveCookie, onSaveDailyRate, o
   const [dailyRate, setDailyRate] = useState(settings.daily_post_rate || 2);
   const [timeSlots, setTimeSlots] = useState(settings.times || ['12:00', '18:00']);
 
-  // Redes Sociais e Privacidade Padrão
+  // Redes Sociais e Privacidade Individual por Rede
   const [postYoutube, setPostYoutube] = useState(settings.default_post_youtube !== false);
+  const [youtubePrivacy, setYoutubePrivacy] = useState(settings.default_youtube_privacy || 'public');
+
   const [postShorts, setPostShorts] = useState(settings.default_post_shorts !== false);
+  const [shortsPrivacy, setShortsPrivacy] = useState(settings.default_shorts_privacy || 'public');
+
   const [postTiktok, setPostTiktok] = useState(settings.default_post_tiktok !== false);
   const [tiktokPrivacy, setTiktokPrivacy] = useState(settings.default_tiktok_privacy || 'PUBLIC');
 
@@ -70,13 +74,15 @@ export default function SettingsTab({ settings, onSaveCookie, onSaveDailyRate, o
     if (onSaveSocialDefaults) {
       await onSaveSocialDefaults({
         postYoutube,
+        youtubePrivacy,
         postShorts,
+        shortsPrivacy,
         postTiktok,
         tiktokPrivacy
       });
     }
     setSavingSocial(false);
-    setSavedSuccess('Padrões de Redes Sociais e Privacidade salvos!');
+    setSavedSuccess('Padrões de Redes Sociais e Privacidade Individual salvos!');
     setTimeout(() => setSavedSuccess(''), 4000);
   };
 
@@ -175,72 +181,126 @@ export default function SettingsTab({ settings, onSaveCookie, onSaveDailyRate, o
         </form>
       </div>
 
-      {/* 3. SEÇÃO DE REDES SOCIAIS E PRIVACIDADE */}
+      {/* 3. SEÇÃO DE REDES SOCIAIS E PRIVACIDADE INDIVIDUAL */}
       <div className="settings-card">
         <h3 className="settings-card-title">
           <Share2 className="w-5 h-5 text-purple-400" />
-          <span>📱 Padrão de Redes Sociais & Privacidade</span>
+          <span>📱 Padrão de Redes Sociais & Privacidade por Rede</span>
         </h3>
 
         <form onSubmit={handleSaveSocialSubmit}>
-          <div style={{ marginBottom: '20px' }}>
-            <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)', display: 'block', marginBottom: '12px' }}>
-              Plataformas Alvo de Publicação:
-            </span>
-
-            <div className="toggle-row">
-              <div>
-                <strong style={{ color: '#fff', fontSize: '0.9rem' }}>YouTube Vídeo Longo</strong>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Publicar episódios longos no canal do YouTube</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '24px' }}>
+            
+            {/* YouTube Longo */}
+            <div style={{ background: '#161926', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+              <div className="toggle-row" style={{ padding: 0, marginBottom: '12px', border: 'none' }}>
+                <div>
+                  <strong style={{ color: '#fff', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: '#ff0000' }}>▶</span> YouTube Vídeo Longo
+                  </strong>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Publicar episódios completos no canal principal</p>
+                </div>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={postYoutube} onChange={(e) => setPostYoutube(e.target.checked)} />
+                  <span className="slider"></span>
+                </label>
               </div>
-              <label className="toggle-switch">
-                <input type="checkbox" checked={postYoutube} onChange={(e) => setPostYoutube(e.target.checked)} />
-                <span className="slider"></span>
-              </label>
+
+              {postYoutube && (
+                <div style={{ marginTop: '10px' }}>
+                  <label className="form-label" style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Lock className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Privacidade no YouTube Vídeo Longo:</span>
+                  </label>
+                  <select 
+                    className="form-select" 
+                    value={youtubePrivacy} 
+                    onChange={(e) => setYoutubePrivacy(e.target.value)}
+                    style={{ fontSize: '0.85rem', padding: '8px 12px' }}
+                  >
+                    <option value="public">🌐 Público (PUBLIC)</option>
+                    <option value="unlisted">🔗 Não Listado (UNLISTED)</option>
+                    <option value="private">🔒 Privado (PRIVATE)</option>
+                  </select>
+                </div>
+              )}
             </div>
 
-            <div className="toggle-row">
-              <div>
-                <strong style={{ color: '#fff', fontSize: '0.9rem' }}>YouTube Shorts</strong>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Publicar formato vertical no Shorts</p>
+            {/* YouTube Shorts */}
+            <div style={{ background: '#161926', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+              <div className="toggle-row" style={{ padding: 0, marginBottom: '12px', border: 'none' }}>
+                <div>
+                  <strong style={{ color: '#fff', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: '#ff0000' }}>⚡</span> YouTube Shorts
+                  </strong>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Publicar no formato vertical Shorts</p>
+                </div>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={postShorts} onChange={(e) => setPostShorts(e.target.checked)} />
+                  <span className="slider"></span>
+                </label>
               </div>
-              <label className="toggle-switch">
-                <input type="checkbox" checked={postShorts} onChange={(e) => setPostShorts(e.target.checked)} />
-                <span className="slider"></span>
-              </label>
+
+              {postShorts && (
+                <div style={{ marginTop: '10px' }}>
+                  <label className="form-label" style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Lock className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Privacidade no YouTube Shorts:</span>
+                  </label>
+                  <select 
+                    className="form-select" 
+                    value={shortsPrivacy} 
+                    onChange={(e) => setShortsPrivacy(e.target.value)}
+                    style={{ fontSize: '0.85rem', padding: '8px 12px' }}
+                  >
+                    <option value="public">🌐 Público (PUBLIC)</option>
+                    <option value="unlisted">🔗 Não Listado (UNLISTED)</option>
+                    <option value="private">🔒 Privado (PRIVATE)</option>
+                  </select>
+                </div>
+              )}
             </div>
 
-            <div className="toggle-row">
-              <div>
-                <strong style={{ color: '#fff', fontSize: '0.9rem' }}>TikTok</strong>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Publicar automaticamente na conta do TikTok</p>
+            {/* TikTok */}
+            <div style={{ background: '#161926', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+              <div className="toggle-row" style={{ padding: 0, marginBottom: '12px', border: 'none' }}>
+                <div>
+                  <strong style={{ color: '#fff', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: '#00f2fe' }}>🎵</span> TikTok
+                  </strong>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Publicar na conta vinculada do TikTok</p>
+                </div>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={postTiktok} onChange={(e) => setPostTiktok(e.target.checked)} />
+                  <span className="slider"></span>
+                </label>
               </div>
-              <label className="toggle-switch">
-                <input type="checkbox" checked={postTiktok} onChange={(e) => setPostTiktok(e.target.checked)} />
-                <span className="slider"></span>
-              </label>
-            </div>
-          </div>
 
-          <div className="form-group">
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Lock className="w-4 h-4 text-cyan-400" />
-              <span>Privacidade Padrão de Publicação:</span>
-            </label>
-            <select 
-              className="form-select" 
-              value={tiktokPrivacy} 
-              onChange={(e) => setTiktokPrivacy(e.target.value)}
-            >
-              <option value="PUBLIC">🌐 Público (Recomendado)</option>
-              <option value="PRIVATE">🔒 Privado (Apenas Você)</option>
-              <option value="MUTUAL_FRIENDS">👥 Amigos Múltuos</option>
-            </select>
+              {postTiktok && (
+                <div style={{ marginTop: '10px' }}>
+                  <label className="form-label" style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Lock className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Privacidade no TikTok:</span>
+                  </label>
+                  <select 
+                    className="form-select" 
+                    value={tiktokPrivacy} 
+                    onChange={(e) => setTiktokPrivacy(e.target.value)}
+                    style={{ fontSize: '0.85rem', padding: '8px 12px' }}
+                  >
+                    <option value="PUBLIC">🌐 Público (PUBLIC)</option>
+                    <option value="PRIVATE">🔒 Privado (PRIVATE)</option>
+                    <option value="MUTUAL_FRIENDS">👥 Amigos Mútuos (MUTUAL_FRIENDS)</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
           </div>
 
           <button type="submit" className="btn-primary" disabled={savingSocial} style={{ marginTop: '12px' }}>
             <Save className="w-4 h-4" />
-            <span>{savingSocial ? 'Salvando Padrões...' : '💾 Salvar Padrões de Redes e Privacidade'}</span>
+            <span>{savingSocial ? 'Salvando Padrões...' : '💾 Salvar Padrões e Privacidades'}</span>
           </button>
         </form>
       </div>

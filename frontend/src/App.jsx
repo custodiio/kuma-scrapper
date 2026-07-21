@@ -23,7 +23,9 @@ export default function App() {
     daily_post_rate: 2,
     times: ['12:00', '18:00'],
     default_post_youtube: true,
+    default_youtube_privacy: 'public',
     default_post_shorts: true,
+    default_shorts_privacy: 'public',
     default_post_tiktok: true,
     default_tiktok_privacy: 'PUBLIC'
   });
@@ -85,7 +87,9 @@ export default function App() {
           setSettings(prev => ({
             ...prev,
             default_post_youtube: dataSocial.post_youtube !== false,
+            default_youtube_privacy: dataSocial.youtube_privacy || 'public',
             default_post_shorts: dataSocial.post_shorts !== false,
+            default_shorts_privacy: dataSocial.shorts_privacy || 'public',
             default_post_tiktok: dataSocial.post_tiktok !== false,
             default_tiktok_privacy: dataSocial.tiktok_privacy || 'PUBLIC'
           }));
@@ -164,11 +168,15 @@ export default function App() {
     }
   };
 
-  // Salvar Padrões de Redes e Privacidade
+  // Salvar Padrões de Redes e Privacidade Individual por Rede
   const handleSaveSocialDefaults = async (socialData) => {
     const formData = new FormData();
     formData.append('post_youtube', socialData.postYoutube ? '1' : '0');
+    formData.append('youtube_privacy', socialData.youtubePrivacy);
+
     formData.append('post_shorts', socialData.postShorts ? '1' : '0');
+    formData.append('shorts_privacy', socialData.shortsPrivacy);
+
     formData.append('post_tiktok', socialData.postTiktok ? '1' : '0');
     formData.append('tiktok_privacy', socialData.tiktokPrivacy);
 
@@ -179,7 +187,9 @@ export default function App() {
         setSettings(prev => ({
           ...prev,
           default_post_youtube: socialData.postYoutube,
+          default_youtube_privacy: socialData.youtubePrivacy,
           default_post_shorts: socialData.postShorts,
+          default_shorts_privacy: socialData.shortsPrivacy,
           default_post_tiktok: socialData.postTiktok,
           default_tiktok_privacy: socialData.tiktokPrivacy
         }));
