@@ -97,6 +97,11 @@ export default function SeriesDetailModal({ collectionDetail, onClose, onToggleA
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                         ⏱️ {durStr} | ❤️ {ep.likes || 0} likes | Status: {statusBadge}
                       </div>
+                      {ep.video_url && (
+                        <a href={ep.video_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: '#7c91ff', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '4px', opacity: 0.85 }}>
+                          🔗 Ver no Douyin
+                        </a>
+                      )}
                     </div>
 
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>

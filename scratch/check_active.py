@@ -1,14 +1,15 @@
 import sqlite3
 
-db_path = "/app/scrapper_douyin/data/history.db"
-conn = sqlite3.connect(db_path)
+db = "/app/scrapper_douyin/data/history.db"
+conn = sqlite3.connect(db)
+conn.row_factory = sqlite3.Row
 
-# Zera os 3 episódios que estão com processing_dubbing (ids 1, 17, 18)
-ids_to_reset = [1, 17, 18]
-for ep_id in ids_to_reset:
-    conn.execute("UPDATE collection_episodes SET status='pending' WHERE id=?", (ep_id,))
-    print(f"Episódio #{ep_id} -> status RESETADO para 'pending'")
+print("=== Episódios da coleção 绘制地下城的画家 (mix_id=7661474265041045567) ===")
+rows = conn.execute(
+    "SELECT id, episode_num, status, title FROM collection_episodes "
+    "WHERE mix_id='7661474265041045567' ORDER BY id"
+).fetchall()
+for r in rows:
+    print(f"  DB id=#{r['id']} | episode_num={r['episode_num']} | status={r['status']} | titulo={r['title'][:50]}")
 
-conn.commit()
 conn.close()
-print("\nPronto! Todos os episódios foram zerados para 'pending'.")

@@ -165,8 +165,13 @@ def fetch_and_store_collection(user_input: str, title_pt: str = None, autopostin
     if not all_episodes:
         return {"ok": False, "message": "Nenhum episódio retornado pela API. Verifique a validade do cookie."}
 
-    # Ordena episódios sequencialmente (EP 1 primeiro)
+    # Ordena: quem tem episode_num explícito vem primeiro; sem ep_num mantém ordem de inserção (cronológica da API)
     all_episodes.sort(key=lambda x: x["episode_num"] if x["episode_num"] is not None else 999999)
+
+    # Atribui posição sequencial para episódios sem número detectado (usa a ordem da coleção no Douyin)
+    for i, ep in enumerate(all_episodes):
+        if ep["episode_num"] is None:
+            ep["episode_num"] = i + 1
 
     # Identifica se já existem episódios curtos para filtrar resumos de 50 min
     has_short_eps = any(ep["duration_seconds"] <= 300 for ep in all_episodes)
