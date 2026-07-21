@@ -27,3 +27,7 @@ Thumbs.db
 logs/
 *.pem
 *.key
+
+# Frontend Node Modules
+frontend/node_modules/
+
