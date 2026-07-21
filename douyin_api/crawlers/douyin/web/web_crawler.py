@@ -71,7 +71,13 @@ class DouyinWebCrawler:
 
     # 从配置文件中获取抖音的请求头
     async def get_douyin_headers(self):
-        douyin_config = config["TokenManager"]["douyin"]
+        try:
+            with open(f"{path}/config.yaml", "r", encoding="utf-8") as f:
+                dyn_config = yaml.safe_load(f)
+                douyin_config = dyn_config["TokenManager"]["douyin"]
+        except Exception:
+            douyin_config = config["TokenManager"]["douyin"]
+
         kwargs = {
             "headers": {
                 "Accept-Language": douyin_config["headers"]["Accept-Language"],
