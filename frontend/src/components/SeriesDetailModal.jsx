@@ -73,7 +73,8 @@ export default function SeriesDetailModal({ collectionDetail, onClose, onToggleA
 
                 let statusBadge = <span style={{ color: 'var(--text-muted)' }}>⏳ Pendente</span>;
                 if (ep.status === 'posted') statusBadge = <span style={{ color: '#4caf50', fontWeight: 'bold' }}>✅ Postado</span>;
-                if (ep.status === 'post_now') statusBadge = <span style={{ color: '#ef5350', fontWeight: 'bold' }}>⚡ Postar Agora</span>;
+                if (ep.status === 'post_now') statusBadge = <span style={{ color: '#ef5350', fontWeight: 'bold' }}>⚡ Disparando...</span>;
+                if (ep.status === 'processing_dubbing') statusBadge = <span style={{ color: '#ab47bc', fontWeight: 'bold' }}>🎬 Dublando &amp; Renderizando</span>;
                 if (ep.status === 'next_in_queue') statusBadge = <span style={{ color: '#0288d1', fontWeight: 'bold' }}>🔝 Próximo da Fila</span>;
                 if (isOpaque) statusBadge = <span style={{ color: '#f57c00', fontWeight: 'bold' }}>⚠️ Requer Ação (&gt;5min)</span>;
 
