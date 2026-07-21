@@ -66,10 +66,11 @@ def generate_posting_guide(episode_title: str, collection_title_pt: str, episode
 def get_animerecap_path() -> str | None:
     """Busca o caminho raiz do projeto AnimeRecap/anime-pipeline no sistema."""
     possible_paths = [
-        r"D:\Applications\AnimeRecap",
-        r"C:\Applications\AnimeRecap",
         "/home/ubuntu/apps/anime-pipeline",
         "/home/ubuntu/apps/AnimeRecap",
+        "/home/ubuntu/apps/SeoAnimeRecap",
+        r"D:\Applications\AnimeRecap",
+        r"C:\Applications\AnimeRecap",
         os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "AnimeRecap")),
         os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "anime-pipeline"))
     ]
