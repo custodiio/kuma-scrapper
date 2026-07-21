@@ -92,20 +92,31 @@ def fetch_and_store_collection(user_input: str, title_pt: str = None, autopostin
     cover_url = ""
     has_more = True
 
+    cookie_val = database.get_user_setting("DOUYIN_COOKIE") or os.getenv("DOUYIN_COOKIE", "")
+    headers = {"cookie": cookie_val} if cookie_val else {}
+
     with httpx.Client(timeout=30.0) as client:
         while has_more and len(all_episodes) < 200:
             params = {"mix_id": mix_id, "max_cursor": cursor, "counts": 20}
             try:
-                resp = client.get(url, params=params)
+                resp = client.get(url, params=params, headers=headers)
                 if resp.status_code != 200:
                     logger.error(f"Erro HTTP {resp.status_code} na API local para mix {mix_id}")
                     break
 
                 res_json = resp.json()
                 data = res_json.get("data", {})
-                aweme_list = data.get("aweme_list", [])
-                has_more = bool(data.get("has_more", 0))
-                cursor = data.get("cursor", 0)
+
+                if data and data.get("status_code") == 5:
+                    logger.warning("⚠️ Douyin retornou status_code 5 (Cookie expirado ou ausente).")
+                    return {
+                        "ok": False,
+                        "message": "⚠️ O Douyin bloqueou a requisição (Cookie expirado ou ausente). Por favor, atualize o Cookie do Douyin na aba ⚙️ Configurações."
+                    }
+
+                aweme_list = data.get("aweme_list", []) if data else []
+                has_more = bool(data.get("has_more", 0)) if data else False
+                cursor = data.get("cursor", 0) if data else 0
 
                 if not aweme_list:
                     break

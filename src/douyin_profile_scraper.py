@@ -43,20 +43,33 @@ def fetch_and_store_profile(user_input: str) -> dict:
     cutoff_date = datetime.now() - timedelta(days=60)  # Limite dos últimos 2 meses
     has_more = True
 
+    # Obtém o Cookie do Douyin do banco ou ambiente
+    cookie_val = database.get_user_setting("DOUYIN_COOKIE") or os.getenv("DOUYIN_COOKIE", "")
+    headers = {"cookie": cookie_val} if cookie_val else {}
+
     with httpx.Client(timeout=30.0) as client:
         while has_more and len(all_videos) < 100:
             params = {"sec_user_id": sec_uid, "max_cursor": max_cursor, "count": 20}
             try:
-                resp = client.get(url, params=params)
+                resp = client.get(url, params=params, headers=headers)
                 if resp.status_code != 200:
                     logger.error(f"Erro HTTP {resp.status_code} na API do Douyin para sec_uid {sec_uid[:15]}")
                     break
 
                 res_json = resp.json()
                 data = res_json.get("data", {})
-                aweme_list = data.get("aweme_list", [])
-                has_more = bool(data.get("has_more", 0))
-                max_cursor = data.get("max_cursor", 0)
+                
+                # Se o Douyin retornar código 5 (Cookie Expirado ou Bloqueado)
+                if data and data.get("status_code") == 5:
+                    logger.warning("⚠️ Douyin retornou status_code 5 (Cookie expirado ou ausente).")
+                    return {
+                        "ok": False,
+                        "message": "⚠️ O Douyin bloqueou a requisição (Cookie expirado ou ausente). Por favor, atualize o Cookie do Douyin na aba ⚙️ Configurações."
+                    }
+
+                aweme_list = data.get("aweme_list", []) if data else []
+                has_more = bool(data.get("has_more", 0)) if data else False
+                max_cursor = data.get("max_cursor", 0) if data else 0
 
                 if not aweme_list:
                     break
