@@ -103,7 +103,7 @@ async def get_cookie_api():
 @app.post("/api/douyin/settings/cookie")
 @app.post("/scrapper/api/douyin/settings/cookie")
 async def save_cookie_api(cookie: str = Form(...)):
-    cookie_val = cookie.strip()
+    cookie_val = cookie.strip().strip("'\"")
     env_path = PROJECT_ROOT / ".env"
     
     try:
