@@ -262,22 +262,25 @@ def apply_episode_action(ep_id: int, action: str) -> dict:
 
     success = database.update_episode_status(ep_id, new_status)
     
-    # Se for acionamento 'post_now' ou 'force_post_now', dispara o pipeline
+    # Se for acionamento 'post_now' ou 'force_post_now', dispara o pipeline em segundo plano
     if action in ["post_now", "force_post_now"]:
         force_flag = (action == "force_post_now")
-        logger.info(f"⚡ Executando disparo manual no pipeline para o episódio #{ep_id} (force={force_flag})...")
-        pipeline_res = pipeline_integrator.dispatch_episode_to_pipeline(ep_id, force=force_flag)
+        logger.info(f"⚡ Disparando pipeline em segundo plano para o episódio #{ep_id} (force={force_flag})...")
         
-        if not pipeline_res.get("ok"):
-            return pipeline_res
+        # Dispara em background thread para a API responder instantaneamente
+        t = threading.Thread(
+            target=pipeline_integrator.dispatch_episode_to_pipeline,
+            args=(ep_id, force_flag),
+            daemon=True
+        )
+        t.start()
 
         return {
             "ok": True,
             "episode_id": ep_id,
             "action": action,
             "manual_execution": True,
-            "pipeline": pipeline_res,
-            "message": f"⚡ Disparo do episódio #{ep_id} iniciado no AnimeRecap com sucesso!"
+            "message": f"⚡ Disparo do episódio #{ep_id} iniciado em segundo plano! Acompanhe as etapas pelo Telegram."
         }
 
     if success:
