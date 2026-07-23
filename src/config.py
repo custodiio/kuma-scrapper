@@ -12,6 +12,12 @@ from dotenv import load_dotenv
 # Carrega .env do diretório raiz do projeto
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
+if not os.getenv("DATABASE_URL"):
+    anime_env = Path("/home/ubuntu/apps/anime-pipeline/.env")
+    if anime_env.exists():
+        load_dotenv(anime_env)
+if not os.getenv("DATABASE_URL"):
+    os.environ["DATABASE_URL"] = "postgresql://pipelineadmin:P1pel!ne_2026@127.0.0.1:5432/anime_pipeline_db"
 
 log = logging.getLogger(__name__)
 
