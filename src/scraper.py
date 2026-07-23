@@ -12,8 +12,9 @@ from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Optional
 
+import sys
 from src.config import (
-    DOUYIN_API_BASE, SEARCH_TERM, MAX_RESULTS,
+    DOUYIN_API_BASE, DOUYIN_COOKIE, SEARCH_TERM, MAX_RESULTS,
     MIN_LIKES, SHORT_MAX, LONG_MIN, LONG_MAX,
 )
 from src import database
@@ -35,13 +36,15 @@ class ScrapeResult:
     skipped_likes: int = 0                              # Pulados por likes baixos
 
 
-# ─── Download via Evil0ctal API (mesmo método do drama-pipeline) ─────────────
+# ─── Download via Evil0ctal API & Fallbacks ────────────────────────────────────
 
 def download_douyin_video(video_url_or_id: str, output_path: str) -> bool:
     """
     Baixa o vídeo do Douyin sem marca d'água.
-    Usa o mesmo método do drama-pipeline: Evil0ctal /api/download (porta 5555).
-    Fallback: yt-dlp.
+    Cascata:
+    1. Evil0ctal /api/download (porta 5555)
+    2. f2 (OpenSource Douyin Max Quality)
+    3. yt-dlp + AutoCookie Playwright (zero login)
     """
     import subprocess
 
@@ -52,7 +55,7 @@ def download_douyin_video(video_url_or_id: str, output_path: str) -> bool:
 
     log.info(f"📥 Baixando vídeo via Evil0ctal API: {video_url_or_id}")
 
-    # 1. Evil0ctal /api/download — igual ao drama-pipeline
+    # 1. Evil0ctal /api/download
     try:
         api_url = f"{DOUYIN_API_BASE}/api/download"
         with httpx.Client(timeout=120.0) as client:
@@ -71,23 +74,72 @@ def download_douyin_video(video_url_or_id: str, output_path: str) -> bool:
     except Exception as e:
         log.warning(f"Evil0ctal API erro: {e}")
 
-    # 2. Fallback: yt-dlp (não requer cookie)
-    log.info("Tentando fallback via yt-dlp (sem cookie)...")
+    # 2. Fallback: f2 (Douyin OpenSource Max Quality)
+    log.info("Tentando download via f2 (Douyin OpenSource Max Quality)...")
+    cookie_str = os.getenv("DOUYIN_COOKIE") or DOUYIN_COOKIE
+    if cookie_str.startswith("douyin.com;"):
+        cookie_str = cookie_str[len("douyin.com;"):].strip()
+
     try:
+        temp_dir = os.path.join(os.path.dirname(output_path), "f2_temp")
+        os.makedirs(temp_dir, exist_ok=True)
+        f2_bin = os.path.join(os.path.dirname(sys.executable), "f2")
+        if not os.path.exists(f2_bin):
+            f2_bin = "f2"
+
+        cmd_f2 = [
+            f2_bin, "douyin",
+            "-u", video_url_or_id,
+            "-M", "one",
+            "-p", temp_dir
+        ]
+        if cookie_str:
+            cmd_f2.extend(["-k", cookie_str])
+
+        result_f2 = subprocess.run(cmd_f2, capture_output=True, text=True, timeout=120)
+        downloaded_files = []
+        for root, dirs, files in os.walk(temp_dir):
+            for f in files:
+                if f.endswith(".mp4"):
+                    downloaded_files.append(os.path.join(root, f))
+        if downloaded_files:
+            target_f2_file = downloaded_files[0]
+            if os.path.getsize(target_f2_file) > 10000:
+                import shutil
+                shutil.move(target_f2_file, output_path)
+                try: shutil.rmtree(temp_dir)
+                except: pass
+                log.info(f"✅ Vídeo baixado via f2 em qualidade máxima ({os.path.getsize(output_path):,} bytes)!")
+                return True
+        log.warning(f"f2 não encontrou arquivo baixado (rc={result_f2.returncode})")
+    except Exception as e_f2:
+        log.warning(f"f2 erro: {e_f2}")
+
+    # 3. Fallback: yt-dlp com Auto-Cookie do Playwright (Sem Login)
+    log.info("Tentando fallback via yt-dlp (com Auto-Cookie Playwright)...")
+    try:
+        from src.auto_cookie import get_douyin_cookie_file_sync
+        auto_cookie_file = get_douyin_cookie_file_sync()
+        cookie_file_arg = ["--cookies", auto_cookie_file] if auto_cookie_file else []
+
         cmd = [
             "yt-dlp", "--no-warnings", "--quiet",
+            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "--referer", "https://www.douyin.com/",
+        ] + cookie_file_arg + [
             "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "--merge-output-format", "mp4",
             "-o", output_path,
-            video_url_or_id,
+            video_url_or_id
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if result.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 10000:
-            log.info(f"✅ Vídeo baixado via yt-dlp ({os.path.getsize(output_path):,} bytes)!")
+
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 10000:
+            log.info(f"✅ Vídeo baixado com sucesso via yt-dlp + AutoCookie ({os.path.getsize(output_path):,} bytes)!")
             return True
-        log.warning(f"yt-dlp falhou (rc={result.returncode}): {result.stderr[:200]}")
-    except Exception as e:
-        log.error(f"yt-dlp erro: {e}")
+        log.warning(f"yt-dlp falhou (rc={res.returncode}): {res.stderr[:200]}")
+    except Exception as e_ytdlp:
+        log.warning(f"yt-dlp exceção: {e_ytdlp}")
 
     log.error(f"❌ Não foi possível baixar o vídeo: {video_url_or_id}")
     return False

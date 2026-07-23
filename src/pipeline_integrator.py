@@ -204,21 +204,26 @@ def dispatch_episode_to_pipeline(ep_id: int, custom_presets: dict = None, force:
         if os.path.exists(video_path):
             orig_dur = media_processor.get_video_duration(video_path)
             proc_video, status_dur = media_processor.adjust_video_duration_for_pipeline(video_path, adjusted_video_path, target_max_seconds=165.0)
-            
-            if status_dur == "opaque_over_5min":
-                database.update_episode_status(ep_id, "opaque_over_5min")
-                msg_opaque = f"⚠️ Vídeo excede 4 minutos ({orig_dur:.1f}s). Marcado para ação do usuário (Dividir / Descartar)."
-                telegram_notifier.send_message(msg_opaque)
+
+            if status_dur == "error":
+                msg_err = f"❌ Falha ao processar a duração do vídeo de {orig_dur:.1f}s. Verifique o arquivo manualmente."
+                telegram_notifier.send_message(msg_err)
                 return {
                     "ok": False,
-                    "status": "opaque_over_5min",
-                    "message": msg_opaque
+                    "status": "error",
+                    "message": msg_err
                 }
-            
+
             final_video_file = proc_video
             new_dur = media_processor.get_video_duration(final_video_file)
 
-            if status_dur == "adjusted":
+            if status_dur == "truncated":
+                telegram_notifier.send_message(
+                    f"✂️ <b>Corte e Aceleração Proporcional Aplicados</b>\n\n"
+                    f"⏱️ Duração original: {orig_dur:.1f}s ({orig_dur/60:.2f} min — acima de 4 min)\n"
+                    f"⚡ Os primeiros 4:00 min foram cortados e acelerados (1.45x) para durar exatamente {new_dur:.1f}s (2:45 min)!"
+                )
+            elif status_dur == "adjusted":
                 speed_factor = orig_dur / 165.0
                 telegram_notifier.send_message(
                     f"⚡ <b>Ajuste de Velocidade Aplicado (sem corte)</b>\n\n"

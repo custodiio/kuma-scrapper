@@ -250,3 +250,15 @@ def run_panel():
     database.init_db()
     print("Iniciando Painel Web (Vite React) na porta 5556 (http://localhost:5556)...")
     uvicorn.run(app, host="0.0.0.0", port=5556, log_level="warning")
+
+
+@app.post("/api/douyin/trigger-next")
+@app.get("/api/douyin/trigger-next")
+@app.post("/scrapper/api/douyin/trigger-next")
+@app.get("/scrapper/api/douyin/trigger-next")
+async def trigger_next_episode_api():
+    """Aciona a pré-renderização/produção do próximo episódio na fila Round-Robin."""
+    from src import episode_scheduler
+    res = episode_scheduler.trigger_pre_render_for_next_episode()
+    return {"ok": True if res else False, "result": res}
+
