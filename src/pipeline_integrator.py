@@ -141,10 +141,30 @@ def dispatch_episode_to_pipeline(ep_id: int, custom_presets: dict = None, force:
         active_eps = database.get_episodes_by_status("processing_dubbing")
         other_actives = [e for e in active_eps if e["id"] != ep_id]
         if other_actives:
-            active_name = other_actives[0].get("title", "")[:35]
-            msg_busy = f"⚠️ Já existe o Episódio #{other_actives[0]['id']} ('{active_name}') em processamento no pipeline. Aguarde a conclusão antes de disparar o próximo."
-            logger.warning(msg_busy)
-            return {"ok": False, "busy": True, "message": msg_busy}
+            # Verifica se realmente existe projeto ativo no anime-pipeline
+            has_running = False
+            try:
+                import psycopg2
+                pg_url = os.getenv("DATABASE_URL")
+                if pg_url:
+                    pg_conn = psycopg2.connect(pg_url)
+                    pg_cur = pg_conn.cursor()
+                    pg_cur.execute("SELECT COUNT(*) FROM pipeline_projects WHERE status IN ('running', 'pending')")
+                    has_running = pg_cur.fetchone()[0] > 0
+                    pg_conn.close()
+            except Exception as e_pg:
+                logger.warning(f"Não foi possível verificar status no Postgres: {e_pg}")
+                has_running = True # Fallback seguro
+
+            if not has_running:
+                logger.info("ℹ️ Episódios em processing_dubbing não possuem projeto ativo no pipeline. Auto-liberando a trava...")
+                for e_stuck in other_actives:
+                    database.update_episode_status(e_stuck["id"], "published")
+            else:
+                active_name = other_actives[0].get("title", "")[:35]
+                msg_busy = f"⚠️ Já existe o Episódio #{other_actives[0]['id']} ('{active_name}') em processamento no pipeline. Aguarde a conclusão antes de disparar o próximo."
+                logger.warning(msg_busy)
+                return {"ok": False, "busy": True, "message": msg_busy}
 
     col = database.get_douyin_collection_by_id(ep["mix_id"])
     col_title = col.get("title_pt", "Série Douyin") if col else "Série Douyin"
