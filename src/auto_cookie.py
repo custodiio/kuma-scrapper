@@ -67,7 +67,18 @@ async def get_fresh_douyin_cookies(force: bool = False) -> str:
 
 def get_douyin_cookie_file_sync(force: bool = False) -> str:
     try:
-        return asyncio.run(get_fresh_douyin_cookies(force=force))
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(lambda: asyncio.run(get_fresh_douyin_cookies(force=force)))
+                return future.result()
+        else:
+            return asyncio.run(get_fresh_douyin_cookies(force=force))
     except Exception as e:
         log.error(f"[AutoCookie Sync] Erro: {e}")
         return ""
