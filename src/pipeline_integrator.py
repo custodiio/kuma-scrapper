@@ -270,8 +270,8 @@ def dispatch_episode_to_pipeline(ep_id: int, custom_presets: dict = None, force:
             f"📁 Limpando pasta <code>ATIVO</code> e preparando áudio <code>AUDIO_DUB</code>..."
         )
 
-        input_vid = final_video_file if os.path.exists(final_video_file) else os.path.join(uploads_dir, "video_original.mp4")
-        input_aud = audio_path if os.path.exists(audio_path) else os.path.join(uploads_dir, "anime_audio.mp3")
+        input_vid = final_video_file if os.path.exists(final_video_file) else os.path.join(uploads_dir, f"ep_{ep_id}_original.mp4")
+        input_aud = audio_path if os.path.exists(audio_path) else os.path.join(uploads_dir, f"ep_{ep_id}_audio.mp3")
 
         from src.config import TELEGRAM_CHAT_ID
         chat_id_to_use = str(TELEGRAM_CHAT_ID) if TELEGRAM_CHAT_ID else "default_scrapper"
