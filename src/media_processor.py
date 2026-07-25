@@ -5,14 +5,18 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+FFMPEG = os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg")
+FFPROBE = os.getenv("FFPROBE_PATH", "/usr/bin/ffprobe")
+
+
 def get_video_duration(video_path: str) -> float:
     """Retorna a duração do vídeo em segundos usando ffprobe."""
     if not os.path.exists(video_path):
         return 0.0
     cmd = [
-        'ffprobe', '-v', 'error',
-        '-show_entries', 'format=duration',
-        '-of', 'default=noprint_wrappers=1:nokey=1',
+        FFPROBE, "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
         video_path
     ]
     try:
@@ -21,6 +25,7 @@ def get_video_duration(video_path: str) -> float:
     except Exception as e:
         logger.error(f"Erro ao obter duração do vídeo {video_path}: {e}")
         return 0.0
+
 
 def adjust_video_duration_for_pipeline(input_path: str, output_path: str, target_max_seconds: float = 165.0) -> tuple[str, str]:
     """
@@ -71,6 +76,7 @@ def adjust_video_duration_for_pipeline(input_path: str, output_path: str, target
 
     return input_path, "ready"
 
+
 def speedup_video(input_path: str, output_path: str, speed_factor: float) -> bool:
     """Acelera vídeo e áudio via ffmpeg (setpts + atempo)."""
     if not os.path.exists(input_path):
@@ -84,19 +90,20 @@ def speedup_video(input_path: str, output_path: str, speed_factor: float) -> boo
         af_filter = f"atempo=2.0,atempo={speed_factor/2.0:.4f}"
 
     cmd = [
-        'ffmpeg', '-y', '-i', input_path,
-        '-filter_complex', f"[0:v]setpts={pts_factor:.4f}*PTS[v];[0:a]{af_filter}[a]",
-        '-map', '[v]', '-map', '[a]',
-        '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac',
+        FFMPEG, "-y", "-i", input_path,
+        "-filter_complex", f"[0:v]setpts={pts_factor:.4f}*PTS[v];[0:a]{af_filter}[a]",
+        "-map", "[v]", "-map", "[a]",
+        "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac",
         output_path
     ]
     try:
         logger.info(f"Acelerando vídeo {input_path} em {speed_factor:.3f}x para {output_path}...")
-        subprocess.run(cmd, capture_output=True, check=True, timeout=300)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
         return os.path.exists(output_path) and os.path.getsize(output_path) > 0
     except Exception as e:
         logger.error(f"Erro ao acelerar vídeo com ffmpeg: {e}")
         return False
+
 
 def truncate_video(input_path: str, output_path: str, seconds: float = 165.0) -> bool:
     """Corta o vídeo nos primeiros N segundos."""
@@ -106,25 +113,26 @@ def truncate_video(input_path: str, output_path: str, seconds: float = 165.0) ->
         
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     cmd = [
-        'ffmpeg', '-y', '-ss', '0', '-i', input_path, '-t', str(seconds),
-        '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', output_path
+        FFMPEG, "-y", "-ss", "0", "-i", input_path, "-t", str(seconds),
+        "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", output_path
     ]
     try:
         logger.info(f"Cortando vídeo {input_path} para {seconds}s...")
-        subprocess.run(cmd, capture_output=True, check=True, timeout=300)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
         return os.path.exists(output_path) and os.path.getsize(output_path) > 0
     except Exception as e:
         logger.error(f"Erro ao cortar vídeo com ffmpeg: {e}")
         return False
+
 
 def extract_audio(video_path: str, audio_path: str) -> bool:
     """Extrai a faixa de áudio de um vídeo e a converte para MP3 usando ffmpeg."""
     if not os.path.exists(video_path):
         return False
     os.makedirs(os.path.dirname(audio_path), exist_ok=True)
-    cmd = ['ffmpeg', '-y', '-i', video_path, '-vn', '-acodec', 'libmp3lame', '-q:a', '2', audio_path]
+    cmd = [FFMPEG, "-y", "-i", video_path, "-vn", "-acodec", "libmp3lame", "-q:a", "2", audio_path]
     try:
-        subprocess.run(cmd, capture_output=True, check=True, timeout=120)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=120)
         return os.path.exists(audio_path) and os.path.getsize(audio_path) > 0
     except Exception as e:
         logger.error(f"Erro ao extrair áudio: {e}")
