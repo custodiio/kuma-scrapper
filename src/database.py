@@ -803,7 +803,7 @@ def get_douyin_collections(status_filter: str = None) -> list[dict]:
             SELECT 
                 c.*,
                 COUNT(e.id) as total_episodes_mapped,
-                SUM(CASE WHEN e.status = 'posted' THEN 1 ELSE 0 END) as posted_count,
+                SUM(CASE WHEN e.status IN ('posted', 'published', 'completed') THEN 1 ELSE 0 END) as posted_count,
                 SUM(CASE WHEN e.status = 'opaque_over_5min' THEN 1 ELSE 0 END) as opaque_count
             FROM douyin_collections c
             LEFT JOIN collection_episodes e ON c.mix_id = e.mix_id
@@ -831,7 +831,7 @@ def get_douyin_collection_by_id(mix_id: str) -> dict | None:
             SELECT 
                 c.*,
                 COUNT(e.id) as total_episodes_mapped,
-                SUM(CASE WHEN e.status = 'posted' THEN 1 ELSE 0 END) as posted_count,
+                SUM(CASE WHEN e.status IN ('posted', 'published', 'completed') THEN 1 ELSE 0 END) as posted_count,
                 SUM(CASE WHEN e.status = 'opaque_over_5min' THEN 1 ELSE 0 END) as opaque_count
             FROM douyin_collections c
             LEFT JOIN collection_episodes e ON c.mix_id = e.mix_id
