@@ -169,19 +169,22 @@ def get_next_episodes_to_post(count: int = None) -> list[dict]:
 
         remaining_count = count - len(selected_episodes)
 
-        # 3. Lógica Round-Robin: busca a próxima coleção ativa com episódio pendente
+        # 3. Lógica Round-Robin Intercalada por Sequência:
+        # Busca a próxima coleção ativa onde o menor episódio pendente ('pending') tem o menor número de sequência.
+        # Isso garante que a fila rode 1 episódio por coleção no nível EP N antes de avançar para EP N+1.
         cursor.execute("""
             SELECT 
                 c.mix_id,
                 c.title_pt as collection_title_pt,
                 c.title_zh as collection_title_zh,
-                COUNT(CASE WHEN e.status = 'posted' THEN 1 END) as posted_count,
+                MIN(CASE WHEN e.episode_num IS NOT NULL THEN e.episode_num ELSE 999999 END) as next_ep_num,
+                COUNT(CASE WHEN e.status IN ('posted', 'published', 'completed') THEN 1 END) as posted_count,
                 MAX(e.posted_at) as last_posted_at
             FROM douyin_collections c
             JOIN collection_episodes e ON c.mix_id = e.mix_id
             WHERE c.autoposting = 1 AND c.status = 'active' AND e.status = 'pending'
             GROUP BY c.mix_id
-            ORDER BY posted_count ASC, last_posted_at ASC, c.created_at ASC
+            ORDER BY next_ep_num ASC, last_posted_at ASC, c.created_at ASC
         """)
         active_collections = [dict(row) for row in cursor.fetchall()]
 
