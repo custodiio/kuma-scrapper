@@ -208,8 +208,16 @@ def dispatch_episode_to_pipeline(ep_id: int, custom_presets: dict = None, force:
         adjusted_video_path = os.path.join(uploads_dir, f"ep_{ep_id}_2m45s.mp4")
         audio_path = os.path.join(uploads_dir, f"ep_{ep_id}_audio.mp3")
 
-        # 2. Download do Vídeo HD do Douyin
-        if not os.path.exists(video_path) and ep.get("video_url"):
+        # Garante limpeza completa de arquivos locais anteriores do mesmo episódio
+        for old_f in [video_path, adjusted_video_path, audio_path]:
+            if os.path.exists(old_f):
+                try:
+                    os.remove(old_f)
+                except Exception:
+                    pass
+
+        # 2. Download do Vídeo HD do Douyin (Sempre atualizado)
+        if ep.get("video_url"):
             logger.info(f"Baixando vídeo HD do Douyin ({ep['video_url']})...")
             from src import scraper
             downloaded = scraper.download_douyin_video(ep["video_url"], video_path)
