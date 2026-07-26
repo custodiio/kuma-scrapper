@@ -58,6 +58,96 @@ def get_mix_info_from_video(aweme_id: str) -> dict | None:
         logger.error(f"Erro ao obter mix_info do vídeo {aweme_id}: {e}")
     return None
 
+def fetch_and_store_single_video(aweme_id: str, title_pt: str = None, autoposting: bool = True) -> dict:
+    """
+    Mapeia um vídeo avulso do Douyin como uma coleção virtual de um único episódio.
+    """
+    url = f"{DOUYIN_API_BASE}/api/douyin/web/fetch_one_video"
+    cookie_val = database.get_user_setting("DOUYIN_COOKIE") or os.getenv("DOUYIN_COOKIE", "")
+    headers = {"cookie": cookie_val} if cookie_val else {}
+    
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            resp = client.get(url, params={"aweme_id": aweme_id}, headers=headers)
+            if resp.status_code != 200:
+                return {"ok": False, "message": f"Erro HTTP {resp.status_code} ao buscar detalhes do vídeo avulso."}
+            
+            res_json = resp.json()
+            data = res_json.get("data", {})
+            
+            if data and data.get("status_code") == 5:
+                return {
+                    "ok": False,
+                    "message": "⚠️ O Douyin bloqueou a requisição (Cookie expirado ou ausente). Por favor, atualize o Cookie."
+                }
+                
+            aweme_detail = data.get("aweme_detail", {})
+            if not aweme_detail:
+                return {"ok": False, "message": "Detalhes do vídeo não encontrados na resposta da API."}
+                
+            desc = aweme_detail.get("desc", "Vídeo Avulso")
+            author = aweme_detail.get("author", {})
+            author_name = author.get("nickname", "Autor Douyin")
+            video = aweme_detail.get("video", {})
+            stats = aweme_detail.get("statistics", {})
+            
+            cover = ""
+            cover_list = video.get("origin_cover", {}).get("url_list", []) or video.get("cover", {}).get("url_list", [])
+            if cover_list:
+                cover = cover_list[0]
+                
+            duration_s = video.get("duration", 0) // 1000  # ms -> s
+            title_translated = translate_zh_to_pt(desc)
+            
+            virtual_mix_id = f"video_{aweme_id}"
+            
+            # Criar coleção virtual de 1 episódio
+            col_data = {
+                "mix_id": virtual_mix_id,
+                "title_pt": title_pt or title_translated or desc or f"Vídeo Avulso #{aweme_id}",
+                "title_zh": desc,
+                "author": author_name,
+                "cover_url": cover,
+                "total_episodes": 1,
+                "autoposting": autoposting,
+                "is_virtual": True,
+                "status": "active"
+            }
+            database.upsert_douyin_collection(col_data)
+            
+            # Criar episódio único
+            status = "opaque_over_5min" if duration_s > 300 else "pending"
+            ep_data = {
+                "mix_id": virtual_mix_id,
+                "episode_num": 1,
+                "aweme_id": aweme_id,
+                "title": title_translated if title_translated else desc,
+                "duration_seconds": duration_s,
+                "likes": stats.get("digg_count", 0),
+                "comments": stats.get("comment_count", 0),
+                "cover_url": cover,
+                "video_url": f"https://www.douyin.com/video/{aweme_id}",
+                "status": status,
+                "is_compilation": False
+            }
+            database.upsert_collection_episode(ep_data)
+            
+            return {
+                "ok": True,
+                "mix_id": virtual_mix_id,
+                "title_pt": col_data["title_pt"],
+                "title_zh": desc,
+                "author": author_name,
+                "total_mapped": 1,
+                "saved_count": 1,
+                "opaque_count": 1 if duration_s > 300 else 0,
+                "message": f"Vídeo avulso '{col_data['title_pt']}' mapeado com sucesso como coleção virtual!"
+            }
+    except Exception as e:
+        logger.error(f"Erro ao buscar vídeo avulso {aweme_id}: {e}")
+        return {"ok": False, "message": f"Erro interno ao mapear vídeo avulso: {e}"}
+
+
 def fetch_and_store_collection(user_input: str, title_pt: str = None, autoposting: bool = True) -> dict:
     """
     Mapeia uma coleção completa do Douyin e salva no banco de dados SQLite.
@@ -77,7 +167,8 @@ def fetch_and_store_collection(user_input: str, title_pt: str = None, autopostin
         if info:
             mix_id = info["mix_id"]
         else:
-            return {"ok": False, "message": "O vídeo informado não pertence a nenhuma coleção do Douyin."}
+            # Vídeo avulso (não pertence a nenhuma coleção), mapeia como coleção virtual de 1 episódio!
+            return fetch_and_store_single_video(aweme_id, title_pt, autoposting)
 
     if not mix_id:
         return {"ok": False, "message": "Link ou ID de coleção inválido."}
