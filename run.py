@@ -42,7 +42,15 @@ def run_scheduler():
             inserted = loop.run_until_complete(search_scrapper.run_search_scraping())
             print(f"[{datetime.now()}] Busca concluída. {inserted} novos vídeos adicionados para triagem.")
         except Exception as e:
-            print(f"⚠️ Erro no Scheduler: {e}")
+            print(f"⚠️ Erro no Scheduler Bilibili: {e}")
+
+        try:
+            print(f"[{datetime.now()}] Iniciando varredura automática de atualizações de coleções Douyin...")
+            from src import douyin_profile_scraper
+            douyin_profile_scraper.sync_all_profiles_and_collections()
+            print(f"[{datetime.now()}] Varredura Douyin concluída com sucesso.")
+        except Exception as e:
+            print(f"⚠️ Erro no Scheduler Douyin: {e}")
             
         # Dorme de acordo com o intervalo definido no .env (padrão: 3 horas)
         interval_hours = int(os.getenv("SCRAPE_INTERVAL_HOURS", "3"))
