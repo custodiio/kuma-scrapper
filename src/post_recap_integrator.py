@@ -31,10 +31,10 @@ def get_post_recap_path() -> str | None:
 def schedule_episode_post(
     ep_id: int,
     scheduled_time: datetime = None,
-    post_youtube: bool = True,
+    post_youtube: bool = False,
     post_shorts: bool = True,
     post_tiktok: bool = True,
-    post_instagram: bool = True
+    post_instagram: bool = False
 ) -> dict:
     """
     Agenda o envio autônomo do episódio processado no Post_recap.
