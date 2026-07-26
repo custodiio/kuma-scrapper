@@ -25,7 +25,7 @@ DEFAULT_PIPELINE_PRESETS = {
     "enhancer": True,         # ✅ Aumentar Qualidade (Enhancer ativo)
     "thumbnail": False,       # ❌ Gerar Thumbnail (desativado por padrão)
     "bg_audio": True,         # 🎵 Áudio: Fundo + Dub
-    "srt_type": "word",       # 📝 SRT: Palavra/Palavra
+    "srt_type": "word_by_word",  # 📝 SRT: Palavra/Palavra
     "azure_enabled": True,    # 🤖 Modelo Azure: Ativo
     "manual_mode": False      # 🤖 Modo: Automático — Omni inicia imediatamente
 }
@@ -300,7 +300,7 @@ def dispatch_episode_to_pipeline(ep_id: int, custom_presets: dict = None, force:
                 manual_mode=False,
                 thumbnail_enabled=False,
                 bg_audio=True,
-                srt_type="word",
+                srt_type="word_by_word",
                 azure_enabled=True
             )
             controller.disparar_omni_imediatamente(real_project_id)
