@@ -1249,6 +1249,54 @@ async def cookie_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Erro ao atualizar cookie: {e}")
 
+async def bili_cookie_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando para atualizar o cookie do Bilibili dinamicamente pelo Telegram."""
+    if not is_authorized(update):
+        return
+        
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "📺 *Como usar o comando /bili_cookie:*\n\n"
+            "Envie: `/bili_cookie SEU_COOKIE_BILIBILI_AQUI`\n\n"
+            "O robô salvará no `config.yaml` do Bilibili e reiniciará o serviço da API local automaticamente!",
+            parse_mode="Markdown"
+        )
+        return
+
+    cookie_val = " ".join(args).strip()
+    
+    from pathlib import Path
+    import yaml
+    import subprocess
+    
+    project_root = Path(__file__).resolve().parent.parent
+    config_path = project_root / "douyin_api" / "crawlers" / "bilibili" / "web" / "config.yaml"
+    
+    if not config_path.exists():
+        await update.message.reply_text("❌ Arquivo de configuração do Bilibili não encontrado.")
+        return
+        
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config_data = yaml.safe_load(f)
+            
+        # Atualiza o cookie
+        if 'TokenManager' in config_data and 'bilibili' in config_data['TokenManager']:
+            config_data['TokenManager']['bilibili']['headers']['cookie'] = cookie_val
+            
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(config_data, f, allow_unicode=True)
+                
+            # Reinicia o serviço douyin-api na VPS
+            subprocess.run(["sudo", "systemctl", "restart", "douyin-api.service"])
+            
+            await update.message.reply_text("✅ *Cookie do Bilibili atualizado e serviço reiniciado com sucesso!*", parse_mode="Markdown")
+        else:
+            await update.message.reply_text("❌ Estrutura do arquivo config.yaml do Bilibili é inválida.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro ao atualizar cookie: {e}")
+
 async def colecoes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando para listar coleções cadastradas e o status de autoposting."""
     if not is_authorized(update):
@@ -1285,6 +1333,7 @@ def run_bot():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("cookie", cookie_command))
+    app.add_handler(CommandHandler("bili_cookie", bili_cookie_command))
     app.add_handler(CommandHandler("colecoes", colecoes_command))
     app.add_handler(CallbackQueryHandler(handle_callback_query))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
