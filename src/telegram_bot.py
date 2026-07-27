@@ -157,14 +157,27 @@ async def run_download_pipeline(
         await status_msg.edit_text(f"❌ **Exceção no download** pela API local:\n`{str(e)}`", parse_mode="Markdown")
         return False
         
-    if not download_success:
-        await status_msg.edit_text("❌ **Falha ao realizar download** do vídeo pela API local. Verifique se a API está ativa.", parse_mode="Markdown")
-        return False
-        
-    await status_msg.edit_text("✂️ **Vídeo baixado!** Executando processamento de mídia (FFmpeg duration/audio/cut)...", parse_mode="Markdown")
+async def complete_download_pipeline(
+    chat_id: int,
+    context: ContextTypes.DEFAULT_TYPE,
+    status_msg,
+    temp_video_path: str,
+    category: str,
+    content_type: str,
+    bvid: str,
+    custom_title: str,
+    url: str,
+    action: str,
+    custom_speed: float = 1.0
+) -> bool:
+    """Continua o pipeline de download após a seleção de ação de velocidade/duração."""
+    cat_title = "Shorts" if category == "shorts" else "Vídeos Longos"
+    type_title = "Anime 🌸" if content_type == "anime" else "Manhwa 🇰🇷"
+    
+    await status_msg.edit_text("✂️ **Executando processamento de mídia** (FFmpeg duration/audio/cut)...", parse_mode="Markdown")
     
     final_video_path, final_audio_path, proc_success = media_processor.process_media_for_pipeline(
-        temp_video_path, TEMP_DIR, category
+        temp_video_path, TEMP_DIR, category, action, custom_speed
     )
     
     if not proc_success:
@@ -258,6 +271,135 @@ async def run_download_pipeline(
     deep_clean_cache()
     
     return True
+
+
+async def run_download_pipeline(
+    chat_id: int,
+    context: ContextTypes.DEFAULT_TYPE,
+    url: str,
+    is_douyin: bool,
+    category: str,
+    content_type: str,
+    bvid: str = None,
+    custom_title: str = None
+) -> bool:
+    """Executa o download de forma síncrona dentro de um job assíncrono para atualizar o bot do Telegram."""
+    cat_title = "Shorts" if category == "shorts" else "Vídeos Longos"
+    type_title = "Anime 🌸" if content_type == "anime" else "Manhwa 🇰🇷"
+    
+    status_msg = await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"📥 **Iniciando Download Pipeline...**\n"
+             f"📋 **Contexto:** {cat_title} - {type_title}\n"
+             f"🔗 **URL:** {url}\n"
+             f"⏳ Conectando à API em {DOUYIN_API_BASE}...",
+        parse_mode="Markdown",
+        disable_web_page_preview=True
+    )
+    
+    os.makedirs(TEMP_DIR, exist_ok=True)
+    temp_video_path = os.path.join(TEMP_DIR, "temp_download_original.mp4")
+    
+    # Limpa arquivos temporários antigos se houver
+    if os.path.exists(temp_video_path):
+        try: os.remove(temp_video_path)
+        except: pass
+        
+    api_download_url = f"{DOUYIN_API_BASE}/api/download"
+    download_success = False
+    
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            async with client.stream("GET", api_download_url, params={"url": url, "with_watermark": "false"}) as r:
+                resp_content_type = r.headers.get("Content-Type", "")
+                if r.status_code == 200 and "application/json" not in resp_content_type:
+                    total_size = int(r.headers.get("Content-Length", 0))
+                    downloaded = 0
+                    last_update = 0.0
+                    last_percent = 0
+                    
+                    with open(temp_video_path, "wb") as f:
+                        async for chunk in r.aiter_bytes():
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if total_size > 0:
+                                percent = int((downloaded / total_size) * 100)
+                                now = time.time()
+                                if (percent - last_percent >= 20) or (now - last_update >= 10.0) or (percent == 100):
+                                    last_percent = percent
+                                    last_update = now
+                                    try:
+                                        await status_msg.edit_text(
+                                            f"📥 **Baixando vídeo...**\n"
+                                            f"📋 **Contexto:** {cat_title} - {type_title}\n"
+                                            f"⏳ Progresso: **{percent}%** ({downloaded/(1024*1024):.1f}MB / {total_size/(1024*1024):.1f}MB)...",
+                                            parse_mode="Markdown"
+                                        )
+                                    except: pass
+                    download_success = os.path.exists(temp_video_path) and os.path.getsize(temp_video_path) > 0
+                else:
+                    # Falha na API ou retorno de erro JSON
+                    await r.aread()
+                    try:
+                        err_data = r.json()
+                        err_msg = err_data.get("message", "Erro interno na API de Download")
+                    except Exception:
+                        err_msg = f"HTTP {r.status_code}: {r.text[:200]}"
+                    
+                    logger.error(f"Erro no download pela API local (bot) para {url}: {err_msg}")
+                    await status_msg.edit_text(f"❌ **Falha ao realizar download** pela API local:\n`{err_msg}`", parse_mode="Markdown")
+                    return False
+    except Exception as e:
+        logger.error(f"Exceção ao baixar vídeo da API: {e}")
+        await status_msg.edit_text(f"❌ **Exceção no download** pela API local:\n`{str(e)}`", parse_mode="Markdown")
+        return False
+        
+    if not download_success:
+        await status_msg.edit_text("❌ **Falha ao realizar download** do vídeo pela API local. Verifique se a API está ativa.", parse_mode="Markdown")
+        return False
+        
+    duration = media_processor.get_video_duration(temp_video_path)
+    
+    # Se for maior que 3 minutos (180s), pergunta a ação de velocidade de forma interativa
+    if duration > 180.0:
+        target_bvid = bvid or f"manual_{int(time.time())}"
+        
+        # Salva o estado para continuar depois
+        context.user_data[f"active_dl_{target_bvid}"] = {
+            "temp_video_path": temp_video_path,
+            "category": category,
+            "content_type": content_type,
+            "custom_title": custom_title,
+            "status_msg_id": status_msg.message_id,
+            "url": url
+        }
+        
+        text = (
+            f"⚠️ **Vídeo longo detectado ({duration/60:.1f} min)!**\n"
+            f"Escolha uma ação de velocidade/duração para processamento:"
+        )
+        keyboard = [
+            [InlineKeyboardButton("🚀 Acelerar (Corta 4m -> 2m45s)", callback_data=f"dl_speed:accelerate:{target_bvid}")],
+            [InlineKeyboardButton("🐢 Desacelerar (0.9x)", callback_data=f"dl_speed:slow_0.9:{target_bvid}")],
+            [InlineKeyboardButton("✍️ Personalizado (Digitar fator)", callback_data=f"dl_speed:custom_prompt:{target_bvid}")],
+            [InlineKeyboardButton("🎬 Manter Duração Original", callback_data=f"dl_speed:keep_original:{target_bvid}")]
+        ]
+        await status_msg.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        return True
+        
+    # Se for menor ou igual a 3 minutos, segue o fluxo normal imediatamente
+    return await complete_download_pipeline(
+        chat_id=chat_id,
+        context=context,
+        status_msg=status_msg,
+        temp_video_path=temp_video_path,
+        category=category,
+        content_type=content_type,
+        bvid=bvid,
+        custom_title=custom_title,
+        url=url,
+        action="keep_original"
+    )
 
 # ----------------- MENUS INLINE -----------------
 
@@ -846,6 +988,56 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             f"Envie agora no chat o link do Douyin sem marca d'água correspondente a este vídeo."
         )
 
+    # Lógica de ação de velocidade na fila de download manual
+    elif data.startswith("dl_speed:"):
+        parts = data.split(":")
+        action = parts[1]
+        target_bvid = parts[2]
+        
+        dl_state = context.user_data.get(f"active_dl_{target_bvid}")
+        if not dl_state:
+            await query.answer("Esta sessão de download expirou ou é inválida.", show_alert=True)
+            return
+            
+        status_msg = query.message
+        
+        if action == "custom_prompt":
+            # Pergunta para digitar o fator
+            context.user_data[f"waiting_for_dl_speed_{target_bvid}"] = dl_state
+            await query.edit_message_text(
+                "✍️ **Digitar Velocidade Customizada**\n\n"
+                "Envie agora no chat o fator de velocidade desejado (ex: `0.85`, `0.9` ou `1.15`):",
+                reply_markup=None,
+                parse_mode="Markdown"
+            )
+            return
+            
+        # Remover estado ativo
+        context.user_data.pop(f"active_dl_{target_bvid}", None)
+        await query.answer("Ação de velocidade selecionada!")
+        
+        # Obter velocidade
+        custom_speed = 1.0
+        if action.startswith("slow_"):
+            custom_speed = float(action.split("_")[1])
+            action = "speedup_custom"
+            
+        asyncio.create_task(
+            complete_download_pipeline(
+                chat_id=query.message.chat_id,
+                context=context,
+                status_msg=status_msg,
+                temp_video_path=dl_state["temp_video_path"],
+                category=dl_state["category"],
+                content_type=dl_state["content_type"],
+                bvid=target_bvid,
+                custom_title=dl_state["custom_title"],
+                url=dl_state["url"],
+                action=action,
+                custom_speed=custom_speed
+            )
+        )
+
 # ----------------- TRATAMENTO DE MENSAGENS DE TEXTO -----------------
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -856,6 +1048,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = update.message.text.strip()
     logger.info(f"Mensagem recebida: {text}")
+
+    # Intercepta se estiver aguardando um fator de velocidade customizado para download avulso
+    waiting_dl_speed_key = next((k for k in context.user_data if k.startswith("waiting_for_dl_speed_")), None)
+    if waiting_dl_speed_key:
+        target_bvid = waiting_dl_speed_key.replace("waiting_for_dl_speed_", "")
+        dl_state = context.user_data.pop(waiting_dl_speed_key)
+        
+        # Limpa estado ativo de download
+        context.user_data.pop(f"active_dl_{target_bvid}", None)
+        
+        text_input = text.strip()
+        try:
+            custom_speed = float(text_input)
+            if custom_speed <= 0.1 or custom_speed > 3.0:
+                raise ValueError()
+        except ValueError:
+            await update.message.reply_text("❌ Fator de velocidade inválido! Digite um número positivo entre 0.1 e 3.0 (ex: 0.9). Download abortado.")
+            try: os.remove(dl_state["temp_video_path"])
+            except: pass
+            return
+            
+        status_msg = await update.message.reply_text(f"⏳ Processando com a velocidade customizada de {custom_speed}x...")
+        
+        asyncio.create_task(
+            complete_download_pipeline(
+                chat_id=update.effective_chat.id,
+                context=context,
+                status_msg=status_msg,
+                temp_video_path=dl_state["temp_video_path"],
+                category=dl_state["category"],
+                content_type=dl_state["content_type"],
+                bvid=target_bvid,
+                custom_title=dl_state["custom_title"],
+                url=dl_state["url"],
+                action="speedup_custom",
+                custom_speed=custom_speed
+            )
+        )
+        return
 
     # 0. Adicionar termo de busca
     if "waiting_for_search_term" in context.user_data:

@@ -137,3 +137,78 @@ def extract_audio(video_path: str, audio_path: str) -> bool:
     except Exception as e:
         logger.error(f"Erro ao extrair áudio: {e}")
         return False
+
+
+def process_media_for_pipeline(
+    video_path: str,
+    output_dir: str,
+    category: str,
+    action: str = "keep_original",
+    custom_speed: float = 1.0
+) -> tuple[str, str, bool]:
+    """
+    Processa a mídia baixada baseando-se na ação escolhida pelo usuário.
+    Extrai o áudio em MP3.
+    Retorna (caminho_video_final, caminho_audio_final, sucesso)
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    video_basename = os.path.basename(video_path)
+    name_without_ext, _ = os.path.splitext(video_basename)
+    
+    final_video_path = os.path.join(output_dir, f"{name_without_ext}_processed.mp4")
+    final_audio_path = os.path.join(output_dir, f"{name_without_ext}_audio.mp3")
+    
+    try:
+        duration = get_video_duration(video_path)
+        logger.info(f"Vídeo {video_basename} tem duração de {duration:.2f}s (Ação: {action}, Fator: {custom_speed})")
+        
+        if action == "accelerate":
+            # Acelerar padrão: se for > 240s, corta nos 4 min e acelera para 2:45 min.
+            # Se for menor, apenas acelera proporcionalmente para 2:45 min.
+            target_max_seconds = 165.0
+            if duration > 240.0:
+                logger.info("Ação 'acelerar': Cortando para 4 min e acelerando para 2m45s...")
+                tmp_cut = os.path.join(output_dir, f"{name_without_ext}_tmp_cut.mp4")
+                if truncate_video(video_path, tmp_cut, seconds=240.0):
+                    speed_factor = 240.0 / target_max_seconds
+                    success = speedup_video(tmp_cut, final_video_path, speed_factor)
+                    try: os.remove(tmp_cut)
+                    except: pass
+                    if not success:
+                        return video_path, "", False
+                else:
+                    return video_path, "", False
+            elif duration > target_max_seconds:
+                logger.info("Ação 'acelerar': Acelerando para 2m45s...")
+                speed_factor = duration / target_max_seconds
+                if not speedup_video(video_path, final_video_path, speed_factor):
+                    return video_path, "", False
+            else:
+                final_video_path = video_path
+
+        elif action == "speedup_custom":
+            # Aceleração ou desaceleração customizada (ex: 0.9x)
+            if abs(custom_speed - 1.0) > 0.001:
+                logger.info(f"Ação 'speedup_custom': Aplicando velocidade de {custom_speed}x...")
+                if not speedup_video(video_path, final_video_path, custom_speed):
+                    return video_path, "", False
+            else:
+                final_video_path = video_path
+        
+        else:
+            # Manter original
+            logger.info("Ação 'keep_original': Mantendo vídeo original.")
+            final_video_path = video_path
+            
+        # Extrai o áudio do vídeo final (processado ou original)
+        audio_success = extract_audio(final_video_path, final_audio_path)
+        if not audio_success:
+            logger.error("Falha ao extrair áudio.")
+            return final_video_path, "", False
+            
+        return final_video_path, final_audio_path, True
+        
+    except Exception as e:
+        logger.error(f"Erro geral no processamento de mídia: {e}")
+        return video_path, "", False
+
