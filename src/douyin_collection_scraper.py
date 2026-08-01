@@ -214,13 +214,10 @@ def fetch_and_store_collection(user_input: str, title_pt: str = None, autopostin
     """
     mix_id, aweme_id = extract_ids(user_input)
 
-    if aweme_id and not mix_id:
-        info = get_mix_info_from_video(aweme_id)
-        if info:
-            mix_id = info["mix_id"]
-        else:
-            # Vídeo avulso (não pertence a nenhuma coleção), mapeia como coleção virtual de 1 episódio!
-            return fetch_and_store_single_video(aweme_id, title_pt, autoposting)
+    if aweme_id:
+        # Se for um link de vídeo (contém aweme_id), mapeia estritamente como vídeo avulso.
+        # Evita buscar e importar a coleção inteira automaticamente.
+        return fetch_and_store_single_video(aweme_id, title_pt, autoposting)
 
     if not mix_id:
         return {"ok": False, "message": "Link ou ID de coleção inválido."}
