@@ -47,92 +47,91 @@ def fetch_and_store_profile(user_input: str) -> dict:
     cookie_val = database.get_user_setting("DOUYIN_COOKIE") or os.getenv("DOUYIN_COOKIE", "")
     headers = {"cookie": cookie_val} if cookie_val else {}
 
-    while has_more and len(all_videos) < 100:
-        params = {"sec_user_id": sec_uid, "max_cursor": max_cursor, "count": 20}
-        res_json = None
-        data = None
-        
-        for attempt in range(2):
-            try:
-                with httpx.Client(timeout=30.0) as client:
-                    resp = client.get(url, params=params, headers=headers)
-                    if resp.status_code != 200:
-                        raise ValueError(f"HTTP Status {resp.status_code}")
+    try:
+        while has_more and len(all_videos) < 100:
+            params = {"sec_user_id": sec_uid, "max_cursor": max_cursor, "count": 20}
+            res_json = None
+            data = None
+            
+            for attempt in range(2):
+                try:
+                    with httpx.Client(timeout=30.0) as client:
+                        resp = client.get(url, params=params, headers=headers)
+                        if resp.status_code != 200:
+                            raise ValueError(f"HTTP Status {resp.status_code}")
 
-                    res_json = resp.json()
-                    data = res_json.get("data", {})
+                        res_json = resp.json()
+                        data = res_json.get("data", {})
 
-                    if data and data.get("status_code") == 5:
-                        raise ValueError("Cookie expirado/bloqueado (status_code 5)")
-                    
-                    break # Sucesso
-            except Exception as e:
-                logger.warning(f"Tentativa {attempt+1} de buscar perfil {sec_uid[:15]} falhou: {e}")
-                if attempt == 0:
-                    logger.info("Auto-refrescando cookies do Douyin para perfil...")
-                    from src.auto_cookie import refresh_and_propagate_douyin_cookies_sync
-                    new_cookie = refresh_and_propagate_douyin_cookies_sync(force=True)
-                    if new_cookie:
-                        headers = {"cookie": new_cookie}
-                else:
-                    return {
-                        "ok": False,
-                        "message": f"Não foi possível mapear o perfil (Douyin bloqueou): {e}"
-                    }
+                        if data and data.get("status_code") == 5:
+                            raise ValueError("Cookie expirado/bloqueado (status_code 5)")
+                        
+                        break # Sucesso
+                except Exception as e:
+                    logger.warning(f"Tentativa {attempt+1} de buscar perfil {sec_uid[:15]} falhou: {e}")
+                    if attempt == 0:
+                        logger.info("Auto-refrescando cookies do Douyin para perfil...")
+                        from src.auto_cookie import refresh_and_propagate_douyin_cookies_sync
+                        new_cookie = refresh_and_propagate_douyin_cookies_sync(force=True)
+                        if new_cookie:
+                            headers = {"cookie": new_cookie}
+                    else:
+                        return {
+                            "ok": False,
+                            "message": f"Não foi possível mapear o perfil (Douyin bloqueou): {e}"
+                        }
 
-        aweme_list = data.get("aweme_list", []) if data else []
-        has_more = bool(data.get("has_more", 0)) if data else False
-        max_cursor = data.get("max_cursor", 0) if data else 0
+            aweme_list = data.get("aweme_list", []) if data else []
+            has_more = bool(data.get("has_more", 0)) if data else False
+            max_cursor = data.get("max_cursor", 0) if data else 0
 
-        if not aweme_list:
-            break
+            if not aweme_list:
+                break
 
-                stop_search = False
-                for item in aweme_list:
-                    create_time_ts = item.get("create_time", 0)
-                    pub_date = datetime.fromtimestamp(create_time_ts) if create_time_ts else datetime.now()
+            stop_search = False
+            for item in aweme_list:
+                create_time_ts = item.get("create_time", 0)
+                pub_date = datetime.fromtimestamp(create_time_ts) if create_time_ts else datetime.now()
 
-                    # Se o vídeo for mais antigo que 60 dias (2 meses), interrompe a busca
-                    if pub_date < cutoff_date:
-                        stop_search = True
-                        break
-
-                    aid = str(item.get("aweme_id"))
-                    desc = item.get("desc", "")
-                    author = item.get("author", {})
-                    video = item.get("video", {})
-                    stats = item.get("statistics", {})
-
-                    if not author_nickname and author:
-                        author_nickname = author.get("nickname", "Perfi Douyin")
-                        avatar_url = author.get("avatar_thumb", {}).get("url_list", [""])[0]
-
-                    cover = ""
-                    cover_list = video.get("origin_cover", {}).get("url_list", []) or video.get("cover", {}).get("url_list", [])
-                    if cover_list:
-                        cover = cover_list[0]
-
-                    duration_s = video.get("duration", 0) // 1000  # ms -> s
-                    from src.translator import translate_zh_to_pt
-                    title_pt = translate_zh_to_pt(desc)
-
-                    all_videos.append({
-                        "aweme_id": aid,
-                        "title": title_pt if title_pt else desc,
-                        "duration_seconds": duration_s,
-                        "likes": stats.get("digg_count", 0),
-                        "comments": stats.get("comment_count", 0),
-                        "cover_url": cover,
-                        "published_at": pub_date.strftime("%Y-%m-%d %H:%M:%S"),
-                        "video_url": f"https://www.douyin.com/video/{aid}"
-                    })
-
-                if stop_search:
+                # Se o vídeo for mais antigo que 60 dias (2 meses), interrompe a busca
+                if pub_date < cutoff_date:
+                    stop_search = True
                     break
 
-            except Exception as e:
-                logger.error(f"Erro ao buscar postagens do perfil {sec_uid[:15]}: {e}")
+                aid = str(item.get("aweme_id"))
+                desc = item.get("desc", "")
+                author = item.get("author", {})
+                video = item.get("video", {})
+                stats = item.get("statistics", {})
+
+                if not author_nickname and author:
+                    author_nickname = author.get("nickname", "Perfi Douyin")
+                    avatar_url = author.get("avatar_thumb", {}).get("url_list", [""])[0]
+
+                cover = ""
+                cover_list = video.get("origin_cover", {}).get("url_list", []) or video.get("cover", {}).get("url_list", [])
+                if cover_list:
+                    cover = cover_list[0]
+
+                duration_s = video.get("duration", 0) // 1000  # ms -> s
+                from src.translator import translate_zh_to_pt
+                title_pt = translate_zh_to_pt(desc)
+
+                all_videos.append({
+                    "aweme_id": aid,
+                    "title": title_pt if title_pt else desc,
+                    "duration_seconds": duration_s,
+                    "likes": stats.get("digg_count", 0),
+                    "comments": stats.get("comment_count", 0),
+                    "cover_url": cover,
+                    "published_at": pub_date.strftime("%Y-%m-%d %H:%M:%S"),
+                    "video_url": f"https://www.douyin.com/video/{aid}"
+                })
+
+            if stop_search:
                 break
+    except Exception as e:
+        logger.error(f"Erro ao buscar postagens do perfil {sec_uid[:15]}: {e}")
 
     # Salva o perfil no banco SQLite
     nickname = author_nickname or f"Perfil #{sec_uid[:10]}"
