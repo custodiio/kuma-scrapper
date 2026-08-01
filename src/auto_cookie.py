@@ -31,9 +31,18 @@ async def get_fresh_douyin_cookies(force: bool = False) -> str:
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             )
             page = await context.new_page()
+            
+            # Bloqueia recursos desnecessários para carregar instantaneamente
+            async def block_resources(route):
+                if route.request.resource_type in ["image", "media", "font", "stylesheet"]:
+                    await route.abort()
+                else:
+                    await route.continue_()
+            await page.route("**/*", block_resources)
+
             try:
-                await page.goto("https://www.douyin.com/", wait_until="domcontentloaded", timeout=20000)
-                await asyncio.sleep(4)
+                await page.goto("https://www.douyin.com/video/7212508820852002100", wait_until="commit", timeout=10000)
+                await asyncio.sleep(3)
             except Exception as e_goto:
                 log.warning(f"[AutoCookie] Aviso no page.goto: {e_goto}")
 
