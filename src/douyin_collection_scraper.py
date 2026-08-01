@@ -117,86 +117,86 @@ def fetch_and_store_single_video(aweme_id: str, title_pt: str = None, autopostin
             else:
                 return {"ok": False, "message": f"O Douyin bloqueou a requisição após tentar atualizar os cookies: {e}"}
                 
-    aweme_detail = data.get("aweme_detail", {})
-    desc = aweme_detail.get("desc", "Vídeo Avulso")
-    author = aweme_detail.get("author", {})
-    author_name = author.get("nickname", "Autor Douyin")
-    video = aweme_detail.get("video", {})
-    stats = aweme_detail.get("statistics", {})
-    
-    cover = ""
-    cover_list = video.get("origin_cover", {}).get("url_list", []) or video.get("cover", {}).get("url_list", [])
-    if cover_list:
-        cover = cover_list[0]
+    try:
+        aweme_detail = data.get("aweme_detail", {})
+        desc = aweme_detail.get("desc", "Vídeo Avulso")
+        author = aweme_detail.get("author", {})
+        author_name = author.get("nickname", "Autor Douyin")
+        video = aweme_detail.get("video", {})
+        stats = aweme_detail.get("statistics", {})
         
-    duration_s = video.get("duration", 0) // 1000  # ms -> s
-    title_translated = translate_zh_to_pt(desc)
-
+        cover = ""
+        cover_list = video.get("origin_cover", {}).get("url_list", []) or video.get("cover", {}).get("url_list", [])
+        if cover_list:
+            cover = cover_list[0]
             
-            virtual_mix_id = "colecao_avulsos"
-            
-            # 1. Garante que a Coleção unificada existe
-            col_data = {
-                "mix_id": virtual_mix_id,
-                "title_pt": "Vídeos Avulsos",
-                "title_zh": "Vídeos Avulsos",
-                "author": "Sistema",
-                "cover_url": cover,
-                "total_episodes": 0, # Será atualizado dinamicamente
-                "autoposting": 0,    # Vídeos avulsos não entram na fila de agendamento automático
-                "is_virtual": True,
-                "status": "active"
-            }
-            database.upsert_douyin_collection(col_data)
-            
-            # 2. Calcula o próximo episode_num na coleção unificada
-            conn = database.get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT MAX(episode_num) FROM collection_episodes WHERE mix_id = ?", (virtual_mix_id,))
-            max_num = cursor.fetchone()[0]
-            conn.close()
-            
-            next_ep_num = 1 if max_num is None else int(max_num) + 1
-            
-            # Criar episódio único dentro da coleção unificada
-            status = "opaque_over_5min" if duration_s > 300 else "pending"
-            ep_data = {
-                "mix_id": virtual_mix_id,
-                "episode_num": next_ep_num,
-                "aweme_id": aweme_id,
-                "title": title_pt or (title_translated if title_translated else desc),
-                "duration_seconds": duration_s,
-                "likes": stats.get("digg_count", 0),
-                "comments": stats.get("comment_count", 0),
-                "cover_url": cover,
-                "video_url": f"https://www.douyin.com/video/{aweme_id}",
-                "status": status,
-                "is_compilation": False
-            }
-            database.upsert_collection_episode(ep_data)
-            
-            # 3. Atualiza o total_episodes da coleção
-            conn = database.get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM collection_episodes WHERE mix_id = ?", (virtual_mix_id,))
-            total_eps = cursor.fetchone()[0]
-            cursor.execute("UPDATE douyin_collections SET total_episodes = ? WHERE mix_id = ?", (total_eps, virtual_mix_id))
-            conn.commit()
-            conn.close()
-            
-            return {
-                "ok": True,
-                "mix_id": virtual_mix_id,
-                "title_pt": "Vídeos Avulsos",
-                "title_zh": "Vídeos Avulsos",
-                "author": "Sistema",
-                "total_mapped": total_eps,
-                "saved_count": 1,
-                "opaque_count": 1 if duration_s > 300 else 0,
-                "message": f"Vídeo avulso adicionado com sucesso à coleção 'Vídeos Avulsos' como EP {next_ep_num}!"
-            }
+        duration_s = video.get("duration", 0) // 1000  # ms -> s
+        title_translated = translate_zh_to_pt(desc)
+        
+        virtual_mix_id = "colecao_avulsos"
+        
+        # 1. Garante que a Coleção unificada existe
+        col_data = {
+            "mix_id": virtual_mix_id,
+            "title_pt": "Vídeos Avulsos",
+            "title_zh": "Vídeos Avulsos",
+            "author": "Sistema",
+            "cover_url": cover,
+            "total_episodes": 0, # Será atualizado dinamicamente
+            "autoposting": 0,    # Vídeos avulsos não entram na fila de agendamento automático
+            "is_virtual": True,
+            "status": "active"
+        }
+        database.upsert_douyin_collection(col_data)
+        
+        # 2. Calcula o próximo episode_num na coleção unificada
+        conn = database.get_connection()
+        cursor = conn.conn.cursor() if hasattr(conn, "conn") else conn.cursor()
+        cursor.execute("SELECT MAX(episode_num) FROM collection_episodes WHERE mix_id = ?", (virtual_mix_id,))
+        max_num = cursor.fetchone()[0]
+        conn.close()
+        
+        next_ep_num = 1 if max_num is None else int(max_num) + 1
+        
+        # Criar episódio único dentro da coleção unificada
+        status = "opaque_over_5min" if duration_s > 300 else "pending"
+        ep_data = {
+            "mix_id": virtual_mix_id,
+            "episode_num": next_ep_num,
+            "aweme_id": aweme_id,
+            "title": title_pt or (title_translated if title_translated else desc),
+            "duration_seconds": duration_s,
+            "likes": stats.get("digg_count", 0),
+            "comments": stats.get("comment_count", 0),
+            "cover_url": cover,
+            "video_url": f"https://www.douyin.com/video/{aweme_id}",
+            "status": status,
+            "is_compilation": False
+        }
+        database.upsert_collection_episode(ep_data)
+        
+        # 3. Atualiza o total_episodes da coleção
+        conn = database.get_connection()
+        cursor = conn.conn.cursor() if hasattr(conn, "conn") else conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM collection_episodes WHERE mix_id = ?", (virtual_mix_id,))
+        total_eps = cursor.fetchone()[0]
+        cursor.execute("UPDATE douyin_collections SET total_episodes = ? WHERE mix_id = ?", (total_eps, virtual_mix_id))
+        conn.commit()
+        conn.close()
+        
+        return {
+            "ok": True,
+            "mix_id": virtual_mix_id,
+            "title_pt": "Vídeos Avulsos",
+            "title_zh": "Vídeos Avulsos",
+            "author": "Sistema",
+            "total_mapped": total_eps,
+            "saved_count": 1,
+            "opaque_count": 1 if duration_s > 300 else 0,
+            "message": f"Vídeo avulso adicionado com sucesso à coleção 'Vídeos Avulsos' como EP {next_ep_num}!"
+        }
     except Exception as e:
-        logger.error(f"Erro ao buscar vídeo avulso {aweme_id}: {e}")
+        logger.error(f"Erro ao processar e salvar vídeo avulso {aweme_id}: {e}")
         return {"ok": False, "message": f"Erro interno ao mapear vídeo avulso: {e}"}
 
 
