@@ -2,7 +2,7 @@ import React from 'react';
 import { Plus, Play, AlertTriangle } from 'lucide-react';
 
 export default function CollectionsTab({ collections, onSelectCollection, onOpenAddModal }) {
-  const realCollections = collections.filter(c => !c.is_virtual);
+  const realCollections = collections.filter(c => !c.is_virtual || c.mix_id === 'colecao_avulsos');
 
   return (
     <div className="vitrine-container">
