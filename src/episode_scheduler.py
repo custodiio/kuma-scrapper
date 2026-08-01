@@ -221,6 +221,23 @@ def trigger_pre_render_for_next_episode():
     # Realiza a limpeza de arquivos antigos mantidos há mais de 6 horas
     cleanup_old_next_staging()
 
+    # 🛑 Trava de Segurança: Não produz se já houver 3 ou mais vídeos agendados/pendentes no Post_recap
+    try:
+        import sqlite3 as _sqlite_posts
+        _posts_db_path = "/home/ubuntu/apps/Post_recap/posts.db"
+        if os.path.exists(_posts_db_path):
+            _conn_p = _sqlite_posts.connect(_posts_db_path)
+            _cur_p = _conn_p.cursor()
+            _cur_p.execute("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'pending'")
+            _pending_count = _cur_p.fetchone()[0]
+            _conn_p.close()
+            
+            if _pending_count >= 3:
+                logger.info(f"🛑 Fila de postagem já possui {_pending_count} vídeos pendentes (limite: 3). Ignorando pré-renderização automática.")
+                return {"ok": False, "message": f"Fila de postagem cheia ({_pending_count} pendentes). Produção adiada."}
+    except Exception as e_check:
+        logger.warning(f"Aviso ao verificar fila do Post_recap: {e_check}")
+
     next_eps = get_next_episodes_to_post(count=1)
     if not next_eps:
         logger.info("ℹ️ Nenhum episódio pendente na fila para pré-renderização.")
