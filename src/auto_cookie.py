@@ -83,7 +83,75 @@ def get_douyin_cookie_file_sync(force: bool = False) -> str:
         log.error(f"[AutoCookie Sync] Erro: {e}")
         return ""
 
+
+async def refresh_and_propagate_douyin_cookies(force: bool = False) -> str:
+    """
+    Roda Playwright para obter cookies frescos, formata-os como string de cabeçalho,
+    salva na tabela user_settings do SQLite e propaga para a API Evil0ctal local.
+    """
+    cookie_file = await get_fresh_douyin_cookies(force=force)
+    if not cookie_file or not os.path.exists(cookie_file):
+        log.error("Failed to generate fresh Douyin cookies.")
+        return ""
+
+    cookies_list = []
+    with open(cookie_file, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("#") or not line.strip():
+                continue
+            parts = line.strip().split("\t")
+            if len(parts) >= 7:
+                name = parts[5]
+                value = parts[6]
+                cookies_list.append(f"{name}={value}")
+
+    cookie_str = "; ".join(cookies_list)
+    if not cookie_str:
+        return ""
+
+    # Atualiza SQLite database
+    from src import database
+    database.set_user_setting("DOUYIN_COOKIE", cookie_str)
+    log.info("Saved fresh DOUYIN_COOKIE to database.")
+
+    # Atualiza API Evil0ctal local
+    from src.config import DOUYIN_API_BASE
+    api_url = f"{DOUYIN_API_BASE}/api/hybrid/update_cookie"
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(api_url, json={"service": "douyin", "cookie": cookie_str})
+            if resp.status_code == 200:
+                log.info("Successfully updated cookie in local Evil0ctal API.")
+            else:
+                log.warning(f"Failed to update cookie in local API. HTTP {resp.status_code}")
+    except Exception as e:
+        log.error(f"Error propagating cookie to local API: {e}")
+
+    return cookie_str
+
+
+def refresh_and_propagate_douyin_cookies_sync(force: bool = False) -> str:
+    try:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(lambda: asyncio.run(refresh_and_propagate_douyin_cookies(force=force)))
+                return future.result()
+        else:
+            return asyncio.run(refresh_and_propagate_douyin_cookies(force=force))
+    except Exception as e:
+        log.error(f"Error in refresh_and_propagate_douyin_cookies_sync: {e}")
+        return ""
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     f = get_douyin_cookie_file_sync(force=True)
     print("Gerado:", f)
+

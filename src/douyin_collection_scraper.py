@@ -40,22 +40,41 @@ def extract_ids(user_input: str) -> tuple[str | None, str | None]:
 def get_mix_info_from_video(aweme_id: str) -> dict | None:
     """Obtém mix_info a partir de um vídeo avulso."""
     url = f"{DOUYIN_API_BASE}/api/douyin/web/fetch_one_video"
-    try:
-        with httpx.Client(timeout=20.0) as client:
-            resp = client.get(url, params={"aweme_id": aweme_id})
-            if resp.status_code == 200:
-                data = resp.json().get("data", {})
-                aweme_detail = data.get("aweme_detail", {})
-                mix_info = aweme_detail.get("mix_info", {})
-                if mix_info:
-                    return {
-                        "mix_id": str(mix_info.get("mix_id")),
-                        "mix_name": mix_info.get("mix_name", ""),
-                        "st_at": mix_info.get("st_at"),
-                        "author": aweme_detail.get("author", {}).get("nickname", "Desconhecido")
-                    }
-    except Exception as e:
-        logger.error(f"Erro ao obter mix_info do vídeo {aweme_id}: {e}")
+    cookie_val = database.get_user_setting("DOUYIN_COOKIE") or os.getenv("DOUYIN_COOKIE", "")
+    headers = {"cookie": cookie_val} if cookie_val else {}
+    
+    for attempt in range(2):
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                resp = client.get(url, params={"aweme_id": aweme_id}, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json().get("data", {})
+                    if data and data.get("status_code") == 5:
+                        raise ValueError("Cookie expirado/bloqueado (status_code 5)")
+                    aweme_detail = data.get("aweme_detail", {})
+                    if not aweme_detail:
+                        raise ValueError("Detalhes do vídeo vazios ou ausentes")
+                    mix_info = aweme_detail.get("mix_info", {})
+                    if mix_info:
+                        return {
+                            "mix_id": str(mix_info.get("mix_id")),
+                            "mix_name": mix_info.get("mix_name", ""),
+                            "st_at": mix_info.get("st_at"),
+                            "author": aweme_detail.get("author", {}).get("nickname", "Desconhecido")
+                        }
+                    return None
+                else:
+                    raise ValueError(f"Status HTTP {resp.status_code}")
+        except Exception as e:
+            logger.warning(f"Tentativa {attempt+1} falhou para obter mix_info do vídeo {aweme_id}: {e}")
+            if attempt == 0:
+                logger.info("Auto-refrescando cookies do Douyin para mix_info...")
+                from src.auto_cookie import refresh_and_propagate_douyin_cookies_sync
+                new_cookie = refresh_and_propagate_douyin_cookies_sync(force=True)
+                if new_cookie:
+                    headers = {"cookie": new_cookie}
+            else:
+                logger.error(f"Erro definitivo ao obter mix_info do vídeo {aweme_id}: {e}")
     return None
 
 def fetch_and_store_single_video(aweme_id: str, title_pt: str = None, autoposting: bool = True) -> dict:
@@ -66,38 +85,53 @@ def fetch_and_store_single_video(aweme_id: str, title_pt: str = None, autopostin
     cookie_val = database.get_user_setting("DOUYIN_COOKIE") or os.getenv("DOUYIN_COOKIE", "")
     headers = {"cookie": cookie_val} if cookie_val else {}
     
-    try:
-        with httpx.Client(timeout=20.0) as client:
-            resp = client.get(url, params={"aweme_id": aweme_id}, headers=headers)
-            if resp.status_code != 200:
-                return {"ok": False, "message": f"Erro HTTP {resp.status_code} ao buscar detalhes do vídeo avulso."}
-            
-            res_json = resp.json()
-            data = res_json.get("data", {})
-            
-            if data and data.get("status_code") == 5:
-                return {
-                    "ok": False,
-                    "message": "⚠️ O Douyin bloqueou a requisição (Cookie expirado ou ausente). Por favor, atualize o Cookie."
-                }
+    res_json = None
+    data = None
+    
+    for attempt in range(2):
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                resp = client.get(url, params={"aweme_id": aweme_id}, headers=headers)
+                if resp.status_code != 200:
+                    raise ValueError(f"Erro HTTP {resp.status_code} ao buscar detalhes do vídeo avulso.")
                 
-            aweme_detail = data.get("aweme_detail", {})
-            if not aweme_detail:
-                return {"ok": False, "message": "Detalhes do vídeo não encontrados na resposta da API."}
+                res_json = resp.json()
+                data = res_json.get("data", {})
                 
-            desc = aweme_detail.get("desc", "Vídeo Avulso")
-            author = aweme_detail.get("author", {})
-            author_name = author.get("nickname", "Autor Douyin")
-            video = aweme_detail.get("video", {})
-            stats = aweme_detail.get("statistics", {})
-            
-            cover = ""
-            cover_list = video.get("origin_cover", {}).get("url_list", []) or video.get("cover", {}).get("url_list", [])
-            if cover_list:
-                cover = cover_list[0]
+                if data and data.get("status_code") == 5:
+                    raise ValueError("Cookie expirado ou bloqueado pelo Douyin (status_code 5).")
+                    
+                aweme_detail = data.get("aweme_detail", {})
+                if not aweme_detail:
+                    raise ValueError("Detalhes do vídeo não encontrados na resposta da API.")
                 
-            duration_s = video.get("duration", 0) // 1000  # ms -> s
-            title_translated = translate_zh_to_pt(desc)
+                break # Sucesso
+        except Exception as e:
+            logger.warning(f"Tentativa {attempt+1} falhou ao obter detalhes do vídeo {aweme_id}: {e}")
+            if attempt == 0:
+                logger.info("Auto-refrescando cookies do Douyin...")
+                from src.auto_cookie import refresh_and_propagate_douyin_cookies_sync
+                new_cookie = refresh_and_propagate_douyin_cookies_sync(force=True)
+                if new_cookie:
+                    headers = {"cookie": new_cookie}
+            else:
+                return {"ok": False, "message": f"O Douyin bloqueou a requisição após tentar atualizar os cookies: {e}"}
+                
+    aweme_detail = data.get("aweme_detail", {})
+    desc = aweme_detail.get("desc", "Vídeo Avulso")
+    author = aweme_detail.get("author", {})
+    author_name = author.get("nickname", "Autor Douyin")
+    video = aweme_detail.get("video", {})
+    stats = aweme_detail.get("statistics", {})
+    
+    cover = ""
+    cover_list = video.get("origin_cover", {}).get("url_list", []) or video.get("cover", {}).get("url_list", [])
+    if cover_list:
+        cover = cover_list[0]
+        
+    duration_s = video.get("duration", 0) // 1000  # ms -> s
+    title_translated = translate_zh_to_pt(desc)
+
             
             virtual_mix_id = "colecao_avulsos"
             
@@ -204,31 +238,45 @@ def fetch_and_store_collection(user_input: str, title_pt: str = None, autopostin
     cookie_val = database.get_user_setting("DOUYIN_COOKIE") or os.getenv("DOUYIN_COOKIE", "")
     headers = {"cookie": cookie_val} if cookie_val else {}
 
-    with httpx.Client(timeout=30.0) as client:
-        while has_more and len(all_episodes) < 200:
-            params = {"mix_id": mix_id, "max_cursor": cursor, "counts": 20}
+    while has_more and len(all_episodes) < 200:
+        params = {"mix_id": mix_id, "max_cursor": cursor, "counts": 20}
+        res_json = None
+        data = None
+        
+        for attempt in range(2):
             try:
-                resp = client.get(url, params=params, headers=headers)
-                if resp.status_code != 200:
-                    logger.error(f"Erro HTTP {resp.status_code} na API local para mix {mix_id}")
-                    break
+                with httpx.Client(timeout=30.0) as client:
+                    resp = client.get(url, params=params, headers=headers)
+                    if resp.status_code != 200:
+                        raise ValueError(f"HTTP Status {resp.status_code}")
 
-                res_json = resp.json()
-                data = res_json.get("data", {})
+                    res_json = resp.json()
+                    data = res_json.get("data", {})
 
-                if data and data.get("status_code") == 5:
-                    logger.warning("⚠️ Douyin retornou status_code 5 (Cookie expirado ou ausente).")
+                    if data and data.get("status_code") == 5:
+                        raise ValueError("Cookie expirado/bloqueado (status_code 5)")
+                    
+                    break # Sucesso
+            except Exception as e:
+                logger.warning(f"Tentativa {attempt+1} falhou ao obter mix {mix_id}: {e}")
+                if attempt == 0:
+                    logger.info("Auto-refrescando cookies do Douyin para coleção...")
+                    from src.auto_cookie import refresh_and_propagate_douyin_cookies_sync
+                    new_cookie = refresh_and_propagate_douyin_cookies_sync(force=True)
+                    if new_cookie:
+                        headers = {"cookie": new_cookie}
+                else:
                     return {
                         "ok": False,
-                        "message": "⚠️ O Douyin bloqueou a requisição (Cookie expirado ou ausente). Por favor, atualize o Cookie do Douyin na aba ⚙️ Configurações."
+                        "message": f"Não foi possível mapear a coleção (Douyin bloqueou): {e}"
                     }
 
-                aweme_list = data.get("aweme_list", []) if data else []
-                has_more = bool(data.get("has_more", 0)) if data else False
-                cursor = data.get("cursor", 0) if data else 0
+        aweme_list = data.get("aweme_list", []) if data else []
+        has_more = bool(data.get("has_more", 0)) if data else False
+        cursor = data.get("cursor", 0) if data else 0
 
-                if not aweme_list:
-                    break
+        if not aweme_list:
+            break
 
                 for item in aweme_list:
                     aid = str(item.get("aweme_id"))

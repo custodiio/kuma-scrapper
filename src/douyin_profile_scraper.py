@@ -47,32 +47,45 @@ def fetch_and_store_profile(user_input: str) -> dict:
     cookie_val = database.get_user_setting("DOUYIN_COOKIE") or os.getenv("DOUYIN_COOKIE", "")
     headers = {"cookie": cookie_val} if cookie_val else {}
 
-    with httpx.Client(timeout=30.0) as client:
-        while has_more and len(all_videos) < 100:
-            params = {"sec_user_id": sec_uid, "max_cursor": max_cursor, "count": 20}
+    while has_more and len(all_videos) < 100:
+        params = {"sec_user_id": sec_uid, "max_cursor": max_cursor, "count": 20}
+        res_json = None
+        data = None
+        
+        for attempt in range(2):
             try:
-                resp = client.get(url, params=params, headers=headers)
-                if resp.status_code != 200:
-                    logger.error(f"Erro HTTP {resp.status_code} na API do Douyin para sec_uid {sec_uid[:15]}")
-                    break
+                with httpx.Client(timeout=30.0) as client:
+                    resp = client.get(url, params=params, headers=headers)
+                    if resp.status_code != 200:
+                        raise ValueError(f"HTTP Status {resp.status_code}")
 
-                res_json = resp.json()
-                data = res_json.get("data", {})
-                
-                # Se o Douyin retornar código 5 (Cookie Expirado ou Bloqueado)
-                if data and data.get("status_code") == 5:
-                    logger.warning("⚠️ Douyin retornou status_code 5 (Cookie expirado ou ausente).")
+                    res_json = resp.json()
+                    data = res_json.get("data", {})
+
+                    if data and data.get("status_code") == 5:
+                        raise ValueError("Cookie expirado/bloqueado (status_code 5)")
+                    
+                    break # Sucesso
+            except Exception as e:
+                logger.warning(f"Tentativa {attempt+1} de buscar perfil {sec_uid[:15]} falhou: {e}")
+                if attempt == 0:
+                    logger.info("Auto-refrescando cookies do Douyin para perfil...")
+                    from src.auto_cookie import refresh_and_propagate_douyin_cookies_sync
+                    new_cookie = refresh_and_propagate_douyin_cookies_sync(force=True)
+                    if new_cookie:
+                        headers = {"cookie": new_cookie}
+                else:
                     return {
                         "ok": False,
-                        "message": "⚠️ O Douyin bloqueou a requisição (Cookie expirado ou ausente). Por favor, atualize o Cookie do Douyin na aba ⚙️ Configurações."
+                        "message": f"Não foi possível mapear o perfil (Douyin bloqueou): {e}"
                     }
 
-                aweme_list = data.get("aweme_list", []) if data else []
-                has_more = bool(data.get("has_more", 0)) if data else False
-                max_cursor = data.get("max_cursor", 0) if data else 0
+        aweme_list = data.get("aweme_list", []) if data else []
+        has_more = bool(data.get("has_more", 0)) if data else False
+        max_cursor = data.get("max_cursor", 0) if data else 0
 
-                if not aweme_list:
-                    break
+        if not aweme_list:
+            break
 
                 stop_search = False
                 for item in aweme_list:
