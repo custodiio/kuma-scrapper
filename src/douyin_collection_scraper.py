@@ -238,86 +238,86 @@ def fetch_and_store_collection(user_input: str, title_pt: str = None, autopostin
     cookie_val = database.get_user_setting("DOUYIN_COOKIE") or os.getenv("DOUYIN_COOKIE", "")
     headers = {"cookie": cookie_val} if cookie_val else {}
 
-    while has_more and len(all_episodes) < 200:
-        params = {"mix_id": mix_id, "max_cursor": cursor, "counts": 20}
-        res_json = None
-        data = None
-        
-        for attempt in range(2):
-            try:
-                with httpx.Client(timeout=30.0) as client:
-                    resp = client.get(url, params=params, headers=headers)
-                    if resp.status_code != 200:
-                        raise ValueError(f"HTTP Status {resp.status_code}")
+    try:
+        while has_more and len(all_episodes) < 200:
+            params = {"mix_id": mix_id, "max_cursor": cursor, "counts": 20}
+            res_json = None
+            data = None
+            
+            for attempt in range(2):
+                try:
+                    with httpx.Client(timeout=30.0) as client:
+                        resp = client.get(url, params=params, headers=headers)
+                        if resp.status_code != 200:
+                            raise ValueError(f"HTTP Status {resp.status_code}")
 
-                    res_json = resp.json()
-                    data = res_json.get("data", {})
+                        res_json = resp.json()
+                        data = res_json.get("data", {})
 
-                    if data and data.get("status_code") == 5:
-                        raise ValueError("Cookie expirado/bloqueado (status_code 5)")
-                    
-                    break # Sucesso
-            except Exception as e:
-                logger.warning(f"Tentativa {attempt+1} falhou ao obter mix {mix_id}: {e}")
-                if attempt == 0:
-                    logger.info("Auto-refrescando cookies do Douyin para coleção...")
-                    from src.auto_cookie import refresh_and_propagate_douyin_cookies_sync
-                    new_cookie = refresh_and_propagate_douyin_cookies_sync(force=True)
-                    if new_cookie:
-                        headers = {"cookie": new_cookie}
-                else:
-                    return {
-                        "ok": False,
-                        "message": f"Não foi possível mapear a coleção (Douyin bloqueou): {e}"
-                    }
+                        if data and data.get("status_code") == 5:
+                            raise ValueError("Cookie expirado/bloqueado (status_code 5)")
+                        
+                        break # Sucesso
+                except Exception as e:
+                    logger.warning(f"Tentativa {attempt+1} falhou ao obter mix {mix_id}: {e}")
+                    if attempt == 0:
+                        logger.info("Auto-refrescando cookies do Douyin para coleção...")
+                        from src.auto_cookie import refresh_and_propagate_douyin_cookies_sync
+                        new_cookie = refresh_and_propagate_douyin_cookies_sync(force=True)
+                        if new_cookie:
+                            headers = {"cookie": new_cookie}
+                    else:
+                        return {
+                            "ok": False,
+                            "message": f"Não foi possível mapear a coleção (Douyin bloqueou): {e}"
+                        }
 
-        aweme_list = data.get("aweme_list", []) if data else []
-        has_more = bool(data.get("has_more", 0)) if data else False
-        cursor = data.get("cursor", 0) if data else 0
+            aweme_list = data.get("aweme_list", []) if data else []
+            has_more = bool(data.get("has_more", 0)) if data else False
+            cursor = data.get("cursor", 0) if data else 0
 
-        if not aweme_list:
-            break
-
-                for item in aweme_list:
-                    aid = str(item.get("aweme_id"))
-                    desc = item.get("desc", "")
-                    mix_info = item.get("mix_info", {})
-                    author = item.get("author", {})
-                    video = item.get("video", {})
-                    stats = item.get("statistics", {})
-
-                    if not mix_name and mix_info:
-                        mix_name = mix_info.get("mix_name", "")
-                    if not author_name and author:
-                        author_name = author.get("nickname", "")
-
-                    # Tenta obter a melhor imagem de capa
-                    cover = ""
-                    cover_list = video.get("origin_cover", {}).get("url_list", []) or video.get("cover", {}).get("url_list", [])
-                    if cover_list:
-                        cover = cover_list[0]
-                    if not cover_url and cover:
-                        cover_url = cover
-
-                    duration_s = video.get("duration", 0) // 1000  # ms -> s
-                    ep_num = mix_info.get("st_at") or extract_episode(desc)
-                    title_translated = translate_zh_to_pt(desc)
-
-                    all_episodes.append({
-                        "mix_id": mix_id,
-                        "episode_num": ep_num,
-                        "aweme_id": aid,
-                        "title": title_translated if title_translated else desc,
-                        "duration_seconds": duration_s,
-                        "likes": stats.get("digg_count", 0),
-                        "comments": stats.get("comment_count", 0),
-                        "cover_url": cover,
-                        "video_url": f"https://www.douyin.com/video/{aid}",
-                    })
-
-            except Exception as e:
-                logger.error(f"Erro ao buscar página do mix {mix_id} (cursor={cursor}): {e}")
+            if not aweme_list:
                 break
+
+            for item in aweme_list:
+                aid = str(item.get("aweme_id"))
+                desc = item.get("desc", "")
+                mix_info = item.get("mix_info", {})
+                author = item.get("author", {})
+                video = item.get("video", {})
+                stats = item.get("statistics", {})
+
+                if not mix_name and mix_info:
+                    mix_name = mix_info.get("mix_name", "")
+                if not author_name and author:
+                    author_name = author.get("nickname", "")
+
+                # Tenta obter a melhor imagem de capa
+                cover = ""
+                cover_list = video.get("origin_cover", {}).get("url_list", []) or video.get("cover", {}).get("url_list", [])
+                if cover_list:
+                    cover = cover_list[0]
+                if not cover_url and cover:
+                    cover_url = cover
+
+                duration_s = video.get("duration", 0) // 1000  # ms -> s
+                ep_num = mix_info.get("st_at") or extract_episode(desc)
+                title_translated = translate_zh_to_pt(desc)
+
+                all_episodes.append({
+                    "mix_id": mix_id,
+                    "episode_num": ep_num,
+                    "aweme_id": aid,
+                    "title": title_translated if title_translated else desc,
+                    "duration_seconds": duration_s,
+                    "likes": stats.get("digg_count", 0),
+                    "comments": stats.get("comment_count", 0),
+                    "cover_url": cover,
+                    "video_url": f"https://www.douyin.com/video/{aid}",
+                })
+    except Exception as e:
+        logger.error(f"Erro ao buscar página do mix {mix_id} (cursor={cursor}): {e}")
+        return {"ok": False, "message": f"Erro ao mapear episódios do mix: {e}"}
 
     if not all_episodes:
         return {"ok": False, "message": "Nenhum episódio retornado pela API. Verifique a validade do cookie."}
