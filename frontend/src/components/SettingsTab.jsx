@@ -16,6 +16,9 @@ export default function SettingsTab({ settings, onSaveCookie, onSaveDailyRate, o
   const [postTiktok, setPostTiktok] = useState(settings.default_post_tiktok !== false);
   const [tiktokPrivacy, setTiktokPrivacy] = useState(settings.default_tiktok_privacy || 'PUBLIC');
 
+  const [postInstagram, setPostInstagram] = useState(settings.default_post_instagram === true || settings.default_post_instagram === '1');
+  const [instagramPrivacy, setInstagramPrivacy] = useState(settings.default_instagram_privacy || 'public');
+
   const [savingCookie, setSavingCookie] = useState(false);
   const [savingTimes, setSavingTimes] = useState(false);
   const [savingSocial, setSavingSocial] = useState(false);
@@ -25,6 +28,14 @@ export default function SettingsTab({ settings, onSaveCookie, onSaveDailyRate, o
     setCookie(settings.cookie || '');
     setDailyRate(settings.daily_post_rate || 2);
     setTimeSlots(settings.times || ['12:00', '18:00']);
+    setPostYoutube(settings.default_post_youtube !== false);
+    setYoutubePrivacy(settings.default_youtube_privacy || 'public');
+    setPostShorts(settings.default_post_shorts !== false);
+    setShortsPrivacy(settings.default_shorts_privacy || 'public');
+    setPostTiktok(settings.default_post_tiktok !== false);
+    setTiktokPrivacy(settings.default_tiktok_privacy || 'PUBLIC');
+    setPostInstagram(settings.default_post_instagram === true || settings.default_post_instagram === '1');
+    setInstagramPrivacy(settings.default_instagram_privacy || 'public');
   }, [settings]);
 
   // Atualiza as caixas de horário quando o ritmo diário muda
@@ -78,7 +89,9 @@ export default function SettingsTab({ settings, onSaveCookie, onSaveDailyRate, o
         postShorts,
         shortsPrivacy,
         postTiktok,
-        tiktokPrivacy
+        tiktokPrivacy,
+        postInstagram,
+        instagramPrivacy
       });
     }
     setSavingSocial(false);
@@ -102,49 +115,47 @@ export default function SettingsTab({ settings, onSaveCookie, onSaveDailyRate, o
         </div>
       )}
 
-      {/* 1. SEÇÃO DE COOKIE */}
-      <div className="settings-card">
+      {/* 1. SEÇÃO DE COOKIE DO DOUYIN */}
+      <div className="settings-card" style={{ marginBottom: '24px' }}>
         <h3 className="settings-card-title">
-          <Cookie className="w-5 h-5 text-amber-400" />
-          <span>🍪 Autenticação & Cookie do Douyin</span>
+          <Cookie className="w-5 h-5 text-yellow-400" />
+          <span>🍪 Cookie da Conta do Douyin</span>
         </h3>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginBottom: '16px' }}>
-          Cole o cookie extraído do navegador para autenticação do scraper. Ele será salvo no arquivo <code>.env</code> e sincronizado automaticamente com a API local.
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '16px' }}>
+          Insira abaixo o cookie válido da sua conta no Douyin para permitir que o robô mapeie coleções completas e perfis de criadores sem restrições.
         </p>
 
         <form onSubmit={handleSaveCookieSubmit}>
           <div className="form-group">
-            <label className="form-label">Valor do DOUYIN_COOKIE:</label>
             <textarea
-              className="form-textarea"
+              className="form-input"
               rows={4}
               value={cookie}
               onChange={(e) => setCookie(e.target.value)}
-              placeholder="enter_pc_once=1; UIFID_TEMP=..."
-              required
-              style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}
+              placeholder="Cole aqui o cookie completo..."
+              style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}
             />
           </div>
-          <button type="submit" className="btn-primary" disabled={savingCookie}>
+          <button type="submit" className="btn-primary" disabled={savingCookie} style={{ marginTop: '8px' }}>
             <Save className="w-4 h-4" />
-            <span>{savingCookie ? 'Salvando e Sincronizando...' : '💾 Salvar e Sincronizar Cookie'}</span>
+            <span>{savingCookie ? 'Sincronizando...' : '💾 Salvar Cookie e Sincronizar'}</span>
           </button>
         </form>
       </div>
 
-      {/* 2. SEÇÃO DE RITMO E HORÁRIOS */}
-      <div className="settings-card">
+      {/* 2. SEÇÃO DE RITMO DIÁRIO E HORÁRIOS FIXOS */}
+      <div className="settings-card" style={{ marginBottom: '24px' }}>
         <h3 className="settings-card-title">
-          <Clock className="w-5 h-5 text-blue-400" />
-          <span>⏰ Ritmo Diário & Horários Fixos de Autoposting</span>
+          <Clock className="w-5 h-5 text-cyan-400" />
+          <span>⏰ Ritmo Diário & Horários Personalizados</span>
         </h3>
 
         <form onSubmit={handleSaveTimesSubmit}>
-          <div className="form-group" style={{ marginBottom: '20px' }}>
-            <label className="form-label">Ritmo Diário de Postagens:</label>
-            <select 
-              className="form-select" 
-              value={dailyRate} 
+          <div className="form-group">
+            <label className="form-label">Ritmo de Postagem Diária:</label>
+            <select
+              className="form-select"
+              value={dailyRate}
               onChange={(e) => handleRateChange(e.target.value)}
             >
               <option value={1}>1 vídeo por dia</option>
@@ -291,6 +302,39 @@ export default function SettingsTab({ settings, onSaveCookie, onSaveDailyRate, o
                     <option value="PUBLIC">🌐 Público (PUBLIC)</option>
                     <option value="PRIVATE">🔒 Privado (PRIVATE)</option>
                     <option value="MUTUAL_FRIENDS">👥 Amigos Mútuos (MUTUAL_FRIENDS)</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Instagram */}
+            <div style={{ background: '#161926', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+              <div className="toggle-row" style={{ padding: 0, marginBottom: '12px', border: 'none' }}>
+                <div>
+                  <strong style={{ color: '#fff', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: '#e1306c' }}>📸</span> Instagram Reels
+                  </strong>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Publicar no perfil vinculado do Instagram Reels</p>
+                </div>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={postInstagram} onChange={(e) => setPostInstagram(e.target.checked)} />
+                  <span className="slider"></span>
+                </label>
+              </div>
+
+              {postInstagram && (
+                <div style={{ marginTop: '10px' }}>
+                  <label className="form-label" style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Lock className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Privacidade no Instagram:</span>
+                  </label>
+                  <select 
+                    className="form-select" 
+                    value={instagramPrivacy} 
+                    onChange={(e) => setInstagramPrivacy(e.target.value)}
+                    style={{ fontSize: '0.85rem', padding: '8px 12px' }}
+                  >
+                    <option value="public">🌐 Público (PUBLIC)</option>
                   </select>
                 </div>
               )}

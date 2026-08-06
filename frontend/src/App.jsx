@@ -91,7 +91,9 @@ export default function App() {
             default_post_shorts: dataSocial.post_shorts !== false,
             default_shorts_privacy: dataSocial.shorts_privacy || 'public',
             default_post_tiktok: dataSocial.post_tiktok !== false,
-            default_tiktok_privacy: dataSocial.tiktok_privacy || 'PUBLIC'
+            default_tiktok_privacy: dataSocial.tiktok_privacy || 'PUBLIC',
+            default_post_instagram: dataSocial.post_instagram === true || dataSocial.post_instagram === '1',
+            default_instagram_privacy: dataSocial.instagram_privacy || 'public'
           }));
         }
       }
@@ -180,6 +182,9 @@ export default function App() {
     formData.append('post_tiktok', socialData.postTiktok ? '1' : '0');
     formData.append('tiktok_privacy', socialData.tiktokPrivacy);
 
+    formData.append('post_instagram', socialData.postInstagram ? '1' : '0');
+    formData.append('instagram_privacy', socialData.instagramPrivacy || 'public');
+
     try {
       const res = await fetch(getApiUrl('/api/douyin/settings/social-defaults'), { method: 'POST', body: formData });
       const data = await res.json();
@@ -191,7 +196,9 @@ export default function App() {
           default_post_shorts: socialData.postShorts,
           default_shorts_privacy: socialData.shortsPrivacy,
           default_post_tiktok: socialData.postTiktok,
-          default_tiktok_privacy: socialData.tiktokPrivacy
+          default_tiktok_privacy: socialData.tiktokPrivacy,
+          default_post_instagram: socialData.postInstagram,
+          default_instagram_privacy: socialData.instagramPrivacy
         }));
       }
     } catch (err) {

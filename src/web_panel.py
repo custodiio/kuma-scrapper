@@ -141,6 +141,9 @@ async def get_social_defaults_api():
     post_tiktok = database.get_user_setting("default_post_tiktok", "1") != "0"
     tiktok_privacy = database.get_user_setting("default_tiktok_privacy", "PUBLIC")
 
+    post_insta = database.get_user_setting("default_post_instagram", "0") != "0"
+    insta_privacy = database.get_user_setting("default_instagram_privacy", "public")
+
     return {
         "ok": True,
         "post_youtube": post_yt,
@@ -148,7 +151,9 @@ async def get_social_defaults_api():
         "post_shorts": post_shorts,
         "shorts_privacy": shorts_privacy,
         "post_tiktok": post_tiktok,
-        "tiktok_privacy": tiktok_privacy
+        "tiktok_privacy": tiktok_privacy,
+        "post_instagram": post_insta,
+        "instagram_privacy": insta_privacy
     }
 
 @app.post("/api/douyin/settings/social-defaults")
@@ -159,7 +164,9 @@ async def set_social_defaults_api(
     post_shorts: str = Form("1"),
     shorts_privacy: str = Form("public"),
     post_tiktok: str = Form("1"),
-    tiktok_privacy: str = Form("PUBLIC")
+    tiktok_privacy: str = Form("PUBLIC"),
+    post_instagram: str = Form("0"),
+    instagram_privacy: str = Form("public")
 ):
     database.set_user_setting("default_post_youtube", "1" if post_youtube == "1" else "0")
     database.set_user_setting("default_youtube_privacy", youtube_privacy)
@@ -169,6 +176,9 @@ async def set_social_defaults_api(
 
     database.set_user_setting("default_post_tiktok", "1" if post_tiktok == "1" else "0")
     database.set_user_setting("default_tiktok_privacy", tiktok_privacy)
+
+    database.set_user_setting("default_post_instagram", "1" if post_instagram == "1" else "0")
+    database.set_user_setting("default_instagram_privacy", instagram_privacy)
 
     return {"ok": True, "message": "Padrões de redes sociais e privacidades salvos!"}
 
