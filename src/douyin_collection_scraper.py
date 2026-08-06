@@ -77,6 +77,40 @@ def get_mix_info_from_video(aweme_id: str) -> dict | None:
                 logger.error(f"Erro definitivo ao obter mix_info do vídeo {aweme_id}: {e}")
     return None
 
+def extract_episode_num(text_pt: str = "", text_zh: str = "") -> int:
+    """
+    Tenta capturar inteligentemente o número do episódio no título/descrição (PT ou ZH).
+    Retorna int se encontrado, ou None se não houver indicativo numérico de episódio.
+    """
+    if text_pt:
+        # Busca padrões como EP 141, Ep. 141, Episódio 141, Parte 141, Part 141, Cap 141, #141
+        patterns = [
+            r'(?:ep|episodio|episódio|parte|part|capitulo|capítulo|cap|p)\b\.?\s*#?\s*(\d+)',
+            r'\b(\d+)\s*(?:ª|º)?\s*(?:ep|episodio|episódio|parte|part)\b'
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text_pt, re.IGNORECASE)
+            if match:
+                val = int(match.group(1))
+                if 0 < val < 2000:
+                    return val
+
+    if text_zh:
+        # Busca padrões como 第141集, 第141期, 第141话, 141集
+        patterns = [
+            r'第\s*(\d+)\s*[集期话]',
+            r'(\d+)\s*[集期话]',
+            r'(?:ep|p)\s*(\d+)'
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text_zh, re.IGNORECASE)
+            if match:
+                val = int(match.group(1))
+                if 0 < val < 2000:
+                    return val
+
+    return None
+
 def fetch_and_store_single_video(aweme_id: str, title_pt: str = None, autoposting: bool = True) -> dict:
     """
     Mapeia um vídeo avulso do Douyin agrupando-o em uma coleção virtual unificada de Vídeos Avulsos.
@@ -149,14 +183,17 @@ def fetch_and_store_single_video(aweme_id: str, title_pt: str = None, autopostin
         }
         database.upsert_douyin_collection(col_data)
         
-        # 2. Calcula o próximo episode_num na coleção unificada
-        conn = database.get_connection()
-        cursor = conn.conn.cursor() if hasattr(conn, "conn") else conn.cursor()
-        cursor.execute("SELECT MAX(episode_num) FROM collection_episodes WHERE mix_id = ?", (virtual_mix_id,))
-        max_num = cursor.fetchone()[0]
-        conn.close()
-        
-        next_ep_num = 1 if max_num is None else int(max_num) + 1
+        # 2. Define o episode_num inteligente para o vídeo avulso
+        ep_extracted = extract_episode_num(title_translated or "", desc or "")
+        if ep_extracted is not None:
+            next_ep_num = ep_extracted
+        else:
+            # Se não houver número de episódio explícito na descrição, usa os últimos 6 dígitos do aweme_id
+            # para garantir um identificador único sem forçar uma falsa sequência (EP 1, EP 2...)
+            try:
+                next_ep_num = int(str(aweme_id)[-6:])
+            except Exception:
+                next_ep_num = 0
         
         # Criar episódio único dentro da coleção unificada
         status = "opaque_over_5min" if duration_s > 300 else "pending"
